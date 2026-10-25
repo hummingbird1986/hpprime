@@ -1,0 +1,532 @@
+#pragma mode( separator(.,;) integer(h64) )
+
+EXPORT BtW:=64;
+EXPORT BtB:=16;
+EXPORT BtM:=2;
+EXPORT BtS:=1;
+EXPORT BtP:=0;
+EXPORT BtC:=0;
+EXPORT BtXh:=0;
+EXPORT BtXl:=0;
+
+zDG()
+BEGIN
+  RETURN "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@_";
+END;
+
+zQR(t, d)
+BEGIN
+  LOCAL q, r;
+  q := IP(t/d);
+  r := t - q*d;
+  IF r < 0 THEN q := q-1; r := r+d; END;
+  IF r >= d THEN q := q+1; r := r-d; END;
+  RETURN {q, r};
+END;
+
+zMSK()
+BEGIN
+  IF BtW >= 32 THEN
+    RETURN {2^(BtW-32)-1, 4294967295};
+  END;
+  RETURN {0, 2^BtW-1};
+END;
+
+zMK(h, l)
+BEGIN
+  LOCAL a, b;
+  IF BtW >= 32 THEN
+    a := zQR(h, 2^(BtW-32));
+    b := zQR(l, 4294967296);
+    RETURN {a(2), b(2)};
+  END;
+  b := zQR(l, 2^BtW);
+  RETURN {0, b(2)};
+END;
+
+zL32(a, b, op)
+BEGIN
+  LOCAL x, y, j, r;
+  LOCAL p, u, w, z;
+  x := a; y := b; r := 0; p := 1;
+  FOR j FROM 1 TO 32 DO
+    IF x == 0 AND y == 0 THEN BREAK; END;
+    u := x MOD 2; w := y MOD 2;
+    CASE
+      IF op == 1 THEN z := u*w; END;
+      IF op == 2 THEN z := MAX(u, w); END;
+      DEFAULT z := (u+w) MOD 2;
+    END;
+    r := r + z*p;
+    x := IP(x/2); y := IP(y/2); p := p*2;
+  END;
+  RETURN r;
+END;
+
+zGB(v, n)
+BEGIN
+  LOCAL x, t, q;
+  IF n >= 32 THEN x := v(1); t := n-32; ELSE x := v(2); t := n; END;
+  q := zQR(x, 2^t);
+  RETURN q(1) MOD 2;
+END;
+
+zSB(v, n, s)
+BEGIN
+  LOCAL h, l, b;
+  h := v(1); l := v(2);
+  b := zGB(v, n);
+  IF b <> s THEN
+    IF n >= 32 THEN h := h + (s-b)*2^(n-32); ELSE l := l + (s-b)*2^n; END;
+  END;
+  RETURN {h, l};
+END;
+
+zNOT(v)
+BEGIN
+  LOCAL m;
+  m := zMSK();
+  RETURN {m(1)-v(1), m(2)-v(2)};
+END;
+
+zADD(a, b)
+BEGIN
+  LOCAL h, l, c;
+  l := a(2)+b(2); c := 0;
+  IF l >= 4294967296 THEN l := l-4294967296; c := 1; END;
+  h := a(1)+b(1)+c;
+  IF BtW >= 32 THEN BtC := (h >= 2^(BtW-32)); ELSE BtC := (l >= 2^BtW); END;
+  RETURN zMK(h, l);
+END;
+
+zNEG(v)
+BEGIN
+  LOCAL c, r;
+  IF BtM == 1 THEN RETURN zNOT(v); END;
+  c := BtC;
+  r := zADD(zNOT(v), {0,1});
+  BtC := c;
+  RETURN r;
+END;
+
+zPX(b)
+BEGIN
+  IF BtP == 0 THEN RETURN ""; END;
+  CASE
+    IF b == 2  THEN RETURN "B:"; END;
+    IF b == 8  THEN RETURN "O:"; END;
+    IF b == 10 THEN RETURN "D:"; END;
+    IF b == 16 THEN RETURN "H:"; END;
+    DEFAULT RETURN b + ":";
+  END;
+END;
+
+zTB(s)
+BEGIN
+  LOCAL k, n, c, d, r, u;
+  u := ""; n := DIM(s);
+  FOR k FROM 1 TO n DO
+    c := MID(s, k, 1);
+    IF c <> " " THEN u := u + c; END;
+  END;
+  n := DIM(u);
+  IF n == 0 THEN RETURN 0; END;
+  IF u == "B" OR u == "b" THEN RETURN 2;  END;
+  IF u == "O" OR u == "o" THEN RETURN 8;  END;
+  IF u == "D" OR u == "d" THEN RETURN 10; END;
+  IF u == "H" OR u == "h" THEN RETURN 16; END;
+  r := 0;
+  FOR k FROM 1 TO n DO
+    d := INSTRING("0123456789", MID(u, k, 1)) - 1;
+    IF d < 0 THEN RETURN 0; END;
+    r := r*10 + d;
+  END;
+  RETURN r;
+END;
+
+zVR(x, b)
+BEGIN
+  LOCAL t, ng, h, l, q, dg;
+  LOCAL n, j, j0, c, d, s;
+  t := TYPE(x);
+  IF t == 1 THEN
+    h := B→R(BITSR(x, 32));
+    l := B→R(BITAND(x, #FFFFFFFFh));
+    IF h < 0 THEN h := h + 4294967296; END;
+    IF l < 0 THEN l := l + 4294967296; END;
+    RETURN zMK(h, l);
+  END;
+  IF t == 0 THEN
+    x := IP(x); ng := (x < 0); x := ABS(x);
+    IF b == 10 THEN
+      q := zQR(x, 4294967296);
+      q := zMK(q(1), q(2));
+      IF ng THEN q := zNEG(q); END;
+      RETURN q;
+    END;
+    dg := zDG(); s := "";
+    WHILE x > 0 DO
+      q := zQR(x, 10);
+      s := MID(dg, q(2)+1, 1) + s;
+      x := q(1);
+    END;
+    IF DIM(s) == 0 THEN s := "0"; END;
+    IF ng THEN s := "-" + s; END;
+    x := s; t := 2;
+  END;
+  IF t == 2 THEN
+    dg := zDG(); n := DIM(x); ng := 0; j0 := 1;
+    c := INSTRING(x, ":");
+    IF c > 0 THEN
+      d := zTB(MID(x, 1, c-1));
+      IF d < 2 OR d > 64 THEN
+        MSGBOX("Bad base tag '" + MID(x, 1, c-1) + "'");
+        KILL;
+      END;
+      b := d; j0 := c + 1;
+    END;
+    WHILE j0 <= n AND MID(x, j0, 1) == " " DO j0 := j0 + 1; END;
+    IF j0 <= n THEN
+      c := MID(x, j0, 1);
+      IF INSTRING("-−–‐", c) > 0 THEN ng := 1; j0 := j0 + 1; END;
+      IF c == "+" THEN j0 := j0 + 1; END;
+    END;
+    h := 0; l := 0;
+    FOR j FROM j0 TO n DO
+      c := MID(x, j, 1);
+      IF c <> " " THEN
+        d := INSTRING(dg, c) - 1;
+        IF b <= 36 AND d > 35 AND d < 62 THEN d := d - 26; END;
+        IF d < 0 OR d >= b THEN
+          MSGBOX("Bad digit '" + c + "' for base " + b);
+          KILL;
+        END;
+        q := zQR(l*b + d, 4294967296);
+        l := q(2);
+        q := zQR(h*b + q(1), 4294967296);
+        h := q(2);
+      END;
+    END;
+    q := zMK(h, l);
+    IF ng THEN q := zNEG(q); END;
+    RETURN q;
+  END;
+  MSGBOX("Unsupported input type");
+  KILL;
+END;
+
+zV(x)
+BEGIN
+  RETURN zVR(x, BtB);
+END;
+
+zVB(x, b)
+BEGIN
+  IF b < 2 OR b > 64 THEN MSGBOX("Base must be 2-64"); KILL; END;
+  RETURN zVR(x, IP(b));
+END;
+
+zSM(v)
+BEGIN
+  LOCAL c, w;
+  IF BtM == 0 OR zGB(v, BtW-1) == 0 THEN RETURN {0, v}; END;
+  IF BtM == 1 THEN RETURN {1, zNOT(v)}; END;
+  c := BtC;
+  w := zADD(zNOT(v), {0,1});
+  BtC := c;
+  RETURN {1, w};
+END;
+
+zS(v, b)
+BEGIN
+  LOCAL dg, sm, s, h;
+  LOCAL l, q, r, ng;
+  dg := zDG(); ng := 0; h := v(1); l := v(2);
+  IF BtS == 2 OR (BtS == 1 AND b == 10) THEN
+    sm := zSM(v); ng := sm(1); q := sm(2); h := q(1); l := q(2);
+  END;
+  s := "";
+  REPEAT
+    q := zQR(h, b); h := q(1);
+    r := zQR(q(2)*4294967296 + l, b); l := r(1);
+    s := MID(dg, r(2)+1, 1) + s;
+  UNTIL h == 0 AND l == 0;
+  IF ng THEN s := "-" + s; END;
+  RETURN zPX(b) + s;
+END;
+
+zPUT(v)
+BEGIN
+  BtXh := v(1); BtXl := v(2);
+  RETURN v;
+END;
+
+zRC()
+BEGIN
+  RETURN zMK(BtXh, BtXl);
+END;
+
+zO(v)
+BEGIN
+  BtXh := v(1); BtXl := v(2);
+  RETURN zS(v, BtB);
+END;
+
+zSL(v)
+BEGIN
+  LOCAL h, l, c;
+  BtC := zGB(v, BtW-1);
+  l := v(2)*2; c := 0;
+  IF l >= 4294967296 THEN l := l-4294967296; c := 1; END;
+  h := v(1)*2 + c;
+  RETURN zMK(h, l);
+END;
+
+zSR(v)
+BEGIN
+  LOCAL q;
+  BtC := v(2) MOD 2;
+  q := zQR(v(1), 2);
+  RETURN {q(1), IP(v(2)/2) + q(2)*2147483648};
+END;
+
+zSH(v, op)
+BEGIN
+  LOCAL c, s, r;
+  CASE
+    IF op == 1 THEN RETURN zSL(v); END;
+    IF op == 2 THEN RETURN zSR(v); END;
+    IF op == 3 THEN s := zGB(v, BtW-1); r := zSR(v); RETURN zSB(r, BtW-1, s); END;
+    IF op == 4 THEN r := zSL(v); RETURN zSB(r, 0, BtC); END;
+    IF op == 5 THEN r := zSR(v); RETURN zSB(r, BtW-1, BtC); END;
+    IF op == 6 THEN c := BtC; r := zSL(v); RETURN zSB(r, 0, c); END;
+    DEFAULT c := BtC; r := zSR(v); RETURN zSB(r, BtW-1, c);
+  END;
+END;
+
+zSHN(v, n, op)
+BEGIN
+  LOCAL w, k;
+  w := v;
+  FOR k FROM 1 TO n DO w := zSH(w, op); END;
+  RETURN w;
+END;
+
+zLOG(a, b, op)
+BEGIN
+  LOCAL x, y;
+  x := zV(a); y := zV(b);
+  RETURN {zL32(x(1), y(1), op), zL32(x(2), y(2), op)};
+END;
+
+zCKN(n)
+BEGIN
+  IF n < 0 OR n >= BtW OR n <> IP(n) THEN
+    MSGBOX("Bit number must be 0.." + (BtW-1));
+    KILL;
+  END;
+END;
+
+zMR(n)
+BEGIN
+  IF n <= 0 THEN RETURN {0, 0}; END;
+  IF n >= 32 THEN RETURN {2^(n-32)-1, 4294967295}; END;
+  RETURN {0, 2^n-1};
+END;
+
+EXPORT BST()
+BEGIN
+  LOCAL ms := {"UNS", "1C", "2C"};
+  LOCAL ts := {"tag off", "tag on"};
+  LOCAL km, kt;
+  km := BtM+1; kt := BtP+1;
+  IF km < 1 OR km > 3 THEN km := 3; END;
+  IF kt < 1 OR kt > 2 THEN kt := 1; END;
+  RETURN BtW + "bit  base" + BtB + "  " + ms(km) + "  C=" + BtC + "  " + ts(kt);
+END;
+
+EXPORT BSet()
+BEGIN
+  LOCAL w, b, m, s, v, p;
+  w := BtW; b := BtB; m := BtM+1; s := BtS; p := BtP+1;
+  IF m < 1 OR m > 3 THEN m := 3; END;
+  IF s < 1 OR s > 3 THEN s := 1; END;
+  IF p < 1 OR p > 2 THEN p := 1; END;
+  v := "";
+  IF INPUT({{v, [2]}, w, b,
+            {m, {"Unsigned", "1's complement", "2's complement"}},
+            {s, {"Sign in base 10 only", "Sign in all bases", "Always bit pattern"}},
+            {p, {"Off", "On"}}},
+           "BaseN Setup",
+           {"Value =", "Word size =", "Base =", "Sign =", "Negative =", "Tag ="},
+           {"Digits only, read in the Base below. Empty keeps the current value",
+            "Bits, 1-64", "Base, 2-64", "Unsigned / 1's / 2's complement",
+            "How negative values are displayed",
+            "Prefix output with its base, e.g. H:FF"}) THEN
+    w := IP(w); b := IP(b);
+    IF w < 1 OR w > 64 THEN MSGBOX("Word size must be 1-64"); ELSE BtW := w; END;
+    IF b < 2 OR b > 64 THEN MSGBOX("Base must be 2-64"); ELSE BtB := b; END;
+    BtM := m-1; BtS := s; BtP := p-1;
+    IF DIM(v) > 0 THEN zPUT(zVR(v, BtB)); END;
+  END;
+  RETURN zO(zRC());
+END;
+
+EXPORT W8()  BEGIN BtW := 8;  RETURN zO(zRC()); END;
+EXPORT W16() BEGIN BtW := 16; RETURN zO(zRC()); END;
+EXPORT W32() BEGIN BtW := 32; RETURN zO(zRC()); END;
+EXPORT W64() BEGIN BtW := 64; RETURN zO(zRC()); END;
+EXPORT WS(n)
+BEGIN
+  IF n >= 1 AND n <= 64 THEN BtW := IP(n); ELSE MSGBOX("Word size must be 1-64"); END;
+  RETURN zO(zRC());
+END;
+
+EXPORT BIN() BEGIN BtB := 2;  RETURN zO(zRC()); END;
+EXPORT OCT() BEGIN BtB := 8;  RETURN zO(zRC()); END;
+EXPORT DEC() BEGIN BtB := 10; RETURN zO(zRC()); END;
+EXPORT HEX() BEGIN BtB := 16; RETURN zO(zRC()); END;
+EXPORT MB(n)
+BEGIN
+  IF n >= 2 AND n <= 64 THEN BtB := IP(n); ELSE MSGBOX("Base must be 2-64"); END;
+  RETURN zO(zRC());
+END;
+
+EXPORT MUNS() BEGIN BtM := 0; RETURN zO(zRC()); END;
+EXPORT M1C()  BEGIN BtM := 1; RETURN zO(zRC()); END;
+EXPORT M2C()  BEGIN BtM := 2; RETURN zO(zRC()); END;
+EXPORT CLC()  BEGIN BtC := 0; RETURN BST(); END;
+
+EXPORT MTAG(n)
+BEGIN
+  IF n == 0 OR n == 1 THEN BtP := n; ELSE MSGBOX("Tag must be 0 or 1"); END;
+  RETURN zO(zRC());
+END;
+
+EXPORT BSTO(x)  BEGIN RETURN zO(zV(x)); END;
+EXPORT BI(x, b) BEGIN RETURN zO(zVB(x, b)); END;
+EXPORT BI2(x)   BEGIN RETURN zO(zVR(x, 2));  END;
+EXPORT BI8(x)   BEGIN RETURN zO(zVR(x, 8));  END;
+EXPORT BI10(x)  BEGIN RETURN zO(zVR(x, 10)); END;
+EXPORT BI16(x)  BEGIN RETURN zO(zVR(x, 16)); END;
+EXPORT BCLX()   BEGIN BtXh := 0; BtXl := 0; BtC := 0; RETURN zS({0,0}, BtB); END;
+
+EXPORT BRCL()  BEGIN RETURN zS(zRC(), BtB); END;
+EXPORT BR2()   BEGIN RETURN zS(zRC(), 2);  END;
+EXPORT BR8()   BEGIN RETURN zS(zRC(), 8);  END;
+EXPORT BR10()  BEGIN RETURN zS(zRC(), 10); END;
+EXPORT BR16()  BEGIN RETURN zS(zRC(), 16); END;
+EXPORT BRX(b)
+BEGIN
+  IF b < 2 OR b > 64 THEN MSGBOX("Base must be 2-64"); KILL; END;
+  RETURN zS(zRC(), IP(b));
+END;
+
+EXPORT BALL()
+BEGIN
+  LOCAL v := zRC();
+  RETURN {zS(v, 2), zS(v, 8), zS(v, 10), zS(v, 16)};
+END;
+
+EXPORT BX(x, b)
+BEGIN
+  IF b < 2 OR b > 64 THEN MSGBOX("Base must be 2-64"); KILL; END;
+  RETURN zS(zPUT(zV(x)), IP(b));
+END;
+
+EXPORT BVAL(x)
+BEGIN
+  LOCAL sm, w, r;
+  sm := zSM(zPUT(zV(x))); w := sm(2);
+  r := w(1)*4294967296 + w(2);
+  IF sm(1) THEN r := -r; END;
+  RETURN r;
+END;
+
+EXPORT BAND(a, b)  BEGIN RETURN zO(zLOG(a, b, 1)); END;
+EXPORT BOR(a, b)   BEGIN RETURN zO(zLOG(a, b, 2)); END;
+EXPORT BXOR(a, b)  BEGIN RETURN zO(zLOG(a, b, 3)); END;
+EXPORT BNOT(a)     BEGIN RETURN zO(zNOT(zV(a))); END;
+EXPORT BNAND(a, b) BEGIN RETURN zO(zNOT(zLOG(a, b, 1))); END;
+EXPORT BNOR(a, b)  BEGIN RETURN zO(zNOT(zLOG(a, b, 2))); END;
+EXPORT BXNOR(a, b) BEGIN RETURN zO(zNOT(zLOG(a, b, 3))); END;
+
+EXPORT BSL(x)   BEGIN RETURN zO(zSH(zV(x), 1)); END;
+EXPORT BSR(x)   BEGIN RETURN zO(zSH(zV(x), 2)); END;
+EXPORT BASR(x)  BEGIN RETURN zO(zSH(zV(x), 3)); END;
+EXPORT BRL(x)   BEGIN RETURN zO(zSH(zV(x), 4)); END;
+EXPORT BRR(x)   BEGIN RETURN zO(zSH(zV(x), 5)); END;
+EXPORT BRLC(x)  BEGIN RETURN zO(zSH(zV(x), 6)); END;
+EXPORT BRRC(x)  BEGIN RETURN zO(zSH(zV(x), 7)); END;
+
+EXPORT BSLN(x, n)  BEGIN RETURN zO(zSHN(zV(x), n, 1)); END;
+EXPORT BSRN(x, n)  BEGIN RETURN zO(zSHN(zV(x), n, 2)); END;
+EXPORT BASRN(x, n) BEGIN RETURN zO(zSHN(zV(x), n, 3)); END;
+EXPORT BRLN(x, n)  BEGIN RETURN zO(zSHN(zV(x), n, 4)); END;
+EXPORT BRRN(x, n)  BEGIN RETURN zO(zSHN(zV(x), n, 5)); END;
+EXPORT BRLCN(x, n) BEGIN RETURN zO(zSHN(zV(x), n, 6)); END;
+EXPORT BRRCN(x, n) BEGIN RETURN zO(zSHN(zV(x), n, 7)); END;
+
+EXPORT BROT(x, n)
+BEGIN
+  IF n >= 0 THEN RETURN zO(zSHN(zV(x), n, 5)); END;
+  RETURN zO(zSHN(zV(x), -n, 4));
+END;
+
+EXPORT BSB(x, n)  BEGIN zCKN(n); RETURN zO(zSB(zV(x), n, 1)); END;
+EXPORT BCB(x, n)  BEGIN zCKN(n); RETURN zO(zSB(zV(x), n, 0)); END;
+EXPORT BTST(x, n) BEGIN zCKN(n); RETURN zGB(zPUT(zV(x)), n); END;
+
+EXPORT BCNT(x)
+BEGIN
+  LOCAL v, k, s;
+  v := zPUT(zV(x)); s := 0;
+  FOR k FROM 0 TO BtW-1 DO s := s + zGB(v, k); END;
+  RETURN s;
+END;
+
+EXPORT BMKR(n)
+BEGIN
+  IF n < 0 OR n > BtW THEN MSGBOX("n must be 0.." + BtW); KILL; END;
+  RETURN zO(zMR(n));
+END;
+
+EXPORT BMKL(n)
+BEGIN
+  IF n < 0 OR n > BtW THEN MSGBOX("n must be 0.." + BtW); KILL; END;
+  RETURN zO(zNOT(zMR(BtW-n)));
+END;
+
+EXPORT BLJ(x)
+BEGIN
+  LOCAL v, k, c;
+  v := zV(x); k := 0; c := BtC;
+  IF v(1) == 0 AND v(2) == 0 THEN RETURN {zO(v), 0}; END;
+  WHILE zGB(v, BtW-1) == 0 DO v := zSL(v); k := k+1; END;
+  BtC := c;
+  RETURN {zO(v), k};
+END;
+
+EXPORT BADD(a, b)
+BEGIN
+  LOCAL r;
+  r := zADD(zV(a), zV(b));
+  IF BtM == 1 AND BtC == 1 THEN r := zADD(r, {0,1}); BtC := 1; END;
+  RETURN zO(r);
+END;
+
+EXPORT BSUB(a, b)
+BEGIN
+  LOCAL x, y, r, c;
+  x := zV(a); y := zV(b);
+  r := zADD(x, zNOT(y)); c := BtC;
+  IF BtM == 1 THEN
+    IF c == 1 THEN r := zADD(r, {0,1}); END;
+  ELSE
+    r := zADD(r, {0,1}); c := MAX(c, BtC);
+  END;
+  BtC := 1 - c;
+  RETURN zO(r);
+END;
+
+EXPORT BNEG(a) BEGIN RETURN zO(zNEG(zV(a))); END;

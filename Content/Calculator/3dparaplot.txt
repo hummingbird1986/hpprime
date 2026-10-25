@@ -1,0 +1,149 @@
+//Returns the list of coords
+//Paramters: Function, Start T, End T, Samples/Resolution
+GENCOORDS(F, S, E, R)
+BEGIN
+    //Vars
+    local o;
+    local func_list;
+    func_list := {};
+    //Generate the list
+    FOR T FROM S TO E STEP (E-S)/R DO
+        o := EXPR(F);
+        func_list := append(func_list, o);
+    END;
+    return(func_list);
+END;
+
+FROMTOMAT(F, T)
+BEGIN
+    local forward := F - T;
+    forward := forward / √(forward(1)^2 + forward(2)^2 + forward(3)^2);
+    
+    local right := CROSS([0, 0, 1], [forward(1),forward(2),forward(3)]);
+    right := right / √(right(1)^2 + right(2)^2 + right(3)^2);
+
+    local up := CROSS([forward(1), forward(2), forward(3)],[right(1), right(2), right(3)]);
+    
+    local mat := list2mat( {      right(1),      right(2),      right(3), 0,
+                                               up(1),        up(2),         up(3), 0,
+                                       forward(1), forward(2), forward(3), 0,
+                                                 F(1),          F(2),           F(3), 1}, 4);
+     mat := inv(mat);
+    RETURN mat;
+END;
+
+PLOTONSCREEN(C, X, Y, Z, W, H, D)
+BEGIN
+    local point;
+    local cam_space;
+    local cam_space_list;
+    local canvas_x;
+    local canvas_y;
+    local width = 320;
+    local height = 240;
+    local first := 1; 
+    local past_x;
+    local past_y;
+    FOR I FROM 1 TO size(X) DO
+        //Move the point into camera space
+        point := list2mat( { X(I), Y(I), Z(I) , 1 } , 4);
+        cam_space := point * C;
+        cam_space_list := mat2list(cam_space);
+        //Perspective shift
+        canvas_x := cam_space_list(1) / cam_space_list(3);
+        canvas_y := cam_space_list(2) / -cam_space_list(3);
+        //If it is not on the canvas just move on
+        IF (ABS(canvas_x) > (W) OR ABS(canvas_y) > (H)) THEN CONTINUE; END;
+        //Scale to screensize
+        canvas_x := FLOOR(canvas_x * (-width/W) + width/2);
+        canvas_y := FLOOR(canvas_y * (-height/H) + height/2);
+        //Since we draw by connecting points, we need an initial point to draw from.
+        IF first == 1 THEN
+            first := 0;
+            past_x := canvas_x;
+            past_y := canvas_y;
+            CONTINUE;
+        END;
+        LINE_P(past_x, past_y, canvas_x, canvas_y, D);
+        past_x := canvas_x;
+        past_y := canvas_y;
+
+    END;
+END;
+
+EXPORT paraplot()
+BEGIN
+    //Function parameters
+    local fx;
+    local fy;
+    local fz;    
+    local min;
+    local max;
+    local res;
+    //Not really zoom, more canvas's dimensions
+    local zoom := 1;
+    //Orbit variables
+    local radius := 10;
+    local s := 3.14/4;
+    local t := 3.14/4;
+    //Get function parameters
+    INPUT({{fx, [2]},{fy, [2]},{fz, [2]}, min, max, res}, "Enter function",{"X(T) = ","Y(T) = ","Z(T) = ","Minimium T", "Maximium T", "Samples"});
+    //Generate our samples
+    local x_list = GENCOORDS(fx,min, max, res);
+    local y_list = GENCOORDS(fy,min, max, res);
+    local z_list = GENCOORDS(fz,min, max, res);
+    local axis = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    local zero = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    
+    //Event loop
+    local k;
+    local draw := 1;
+    REPEAT
+        k := GETKEY;
+        IF k == 45 AND radius > 1THEN radius := radius - 1; draw := 1; END;
+        IF k == 50 THEN radius := radius + 1; draw := 1; END;
+        IF k == 7 THEN s := s - 0.1; draw := 1; END;
+        IF k == 8 THEN s := s + 0.1; draw := 1; END;
+        IF k == 2 THEN t := t - 0.1; draw := 1; END;
+        IF k == 12 THEN t := t + 0.1; draw := 1; END;
+        IF k == 1 THEN
+            INPUT({{fx, [2]},{fy, [2]},{fz, [2]}, min, max, res}, "Enter function",{"X(T) = ","Y(T) = ","Z(T) = ","Minimium T", "Maximium T", "Samples"});
+            //Generate our points
+           x_list := GENCOORDS(fx,min, max, res);
+           y_list := GENCOORDS(fy,min, max, res);
+           z_list := GENCOORDS(fz,min, max, res);
+           draw := 1;
+        END;
+        //Help Menu
+        IF k == 3 THEN
+            RECT();
+            TEXTOUT_P("Controls:", 0, 0);
+            TEXTOUT_P("Use d-pad to orbit around origin.", 0, 15);
+            TEXTOUT_P("Use + and - to change orbit radius.", 0, 30);
+            TEXTOUT_P("Use Symb to change parameters.", 0, 45);
+            TEXTOUT_P("Use Esc to quit program", 0, 60);
+
+            TEXTOUT_P("Axes: Right-handed: X is red, Y is green, Z is blue", 0, 80); 
+            TEXTOUT_P("If you can't see the graph, increase radius", 0, 95); 
+            TEXTOUT_P("Press any button to exit this menu", 0, 115);
+
+            TEXTOUT_P("Creator: Zachary Traul", 0, 225);
+            WAIT(0);
+            draw := 1;
+        END;
+        IF draw == 1 THEN
+            //Draw Everything
+            RECT();
+            //Get camera's location.
+            local cam_mat = FROMTOMAT({ radius * COS(s) * SIN(t) , radius * SIN(s) * SIN(t), radius * COS(t)}, {0, 0, 0});
+            //Function
+            PLOTONSCREEN(cam_mat, x_list, y_list, z_list, zoom, zoom, RGB(0,0,0));
+            //Axes
+            PLOTONSCREEN(cam_mat, axis, zero, zero, zoom, zoom, RGB(255, 0, 0));
+            PLOTONSCREEN(cam_mat, zero, axis, zero, zoom, zoom, RGB(0, 255, 0));
+            PLOTONSCREEN(cam_mat, zero, zero, axis, zoom, zoom, RGB(0, 0, 255));
+            draw := 0;
+        END;
+    UNTIL k == 4;
+END;
+

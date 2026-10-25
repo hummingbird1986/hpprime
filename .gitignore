@@ -1,0 +1,10 @@
+# 默认忽略根目录下的一切，再逐个放行要跟踪的目录。
+# 这样 Connectivity Kit 以后新建的目录不会意外被加进来。
+/*
+!/.gitignore
+!/Backups/
+!/Content/
+
+# 系统与工具产生的垃圾文件（对所有层级生效）
+.DS_Store
+.Rhistory
