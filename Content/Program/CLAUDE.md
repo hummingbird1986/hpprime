@@ -278,6 +278,8 @@ writer above, plus a trailing `\0` (see below). The `.hpapp` is a byte copy of `
   (use `zHAS`, a MID scan); don't write `ᴇ` inside quotes, build it with `CHAR(7431)` (`zEE()`).
   An uncaught runtime error silently ends the app, so `zMAIN` wraps `zKEY`/`zTAP`/`zDRAW` in `IFERR`
   and shows "Error on key N" in the strip instead.
+- **Never name a function parameter `i`** (the imaginary unit): "Syntax error in program line N"
+  at the function header (ConfMatrix `zGET(i)`). `LOCAL i` is fine.
 - **At most 8 names per `LOCAL` statement.** 9 gave "Syntax error in program line N" pointing at the
   LOCAL line (seen twice: `zFD` line 340, `zSET` line 374). Split longer lists over two LOCAL lines.
   (The first time it was misdiagnosed as the names `e`/`bias`; they were renamed `ex`/`bs` anyway.)
@@ -292,3 +294,18 @@ writer above, plus a trailing `\0` (see below). The `.hpapp` is a byte copy of `
   space-padded region can be patched straight into the compiled file instead of a plain rewrite.
 - The Kit accepts a plain-variant `.hpappprgm` and rewrites it to the compiled form within ~1-3 min;
   the device copy under `Calculators/` follows shortly after.
+
+## ConfMatrix (added 2026-11-27)
+
+`Content/Application/ConfMatrix.hpappdir/` is a 2x2 confusion-matrix app; readable source
+`Content/Program/ConfMatrix.txt`, built the same way as BaseNApp (plain variant + trailing `\0`,
+`.hpapp` copied from BaseNApp, generated 38x38 icon). Exports only `CMtp CMfn CMfp CMtn`.
+
+- Matrix view: four borderless pastel boxes (TP green, FN red, FP orange, TN blue) touching,
+  x 40-319 / y 56-217 (`zBOX`), with pale-lavender (`#DCD6F0`) header cells for
+  "Predicted Pos./Neg." and "Actual Pos./Neg.". Tap a box, its menu key, or arrows + Enter to
+  enter a count (INPUT dialog). Clear zeroes all four.
+- Num key (11) or the Num menu key: table Metric | Formula | Value (Accuracy, Precision,
+  Sensitivity, Specificity, F1, FPR, FNR, NPV, Balanced acc., MCC); "n/a" on a zero denominator.
+  Counts print with `STRING(v,1)` and percentages with `STRING(x,2,2)`, so the Home number
+  format (often Fixed) does not leak in.

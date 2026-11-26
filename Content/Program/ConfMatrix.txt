@@ -1,0 +1,300 @@
+#pragma mode( separator(.,;) integer(h64) )
+
+// ConfMatrix - 2x2 confusion matrix as a full-screen app (layout after BaseNApp).
+// Matrix view: tap a box (or its menu key, or arrows + Enter) to enter its count.
+// Num key: table of metrics with their formulas. Num / Esc / Symb: back.
+// Exports only the four counts, so they survive leaving the app.
+
+EXPORT CMtp:=0;
+EXPORT CMfn:=0;
+EXPORT CMfp:=0;
+EXPORT CMtn:=0;
+
+zV:=1;
+zSel:=1;
+zEX:=0;
+zMsg:="";
+
+// ---------------- helpers ----------------
+
+// Pixel width of s in font f, measured on the scratch GROB G9 (sized in zMAIN).
+zTW(s, f)
+BEGIN
+  RETURN TEXTOUT_P(s, G9, 0, 0, f);
+END;
+
+// Draw s centred on x = cx.
+zCT(s, cx, y, f, c)
+BEGIN
+  TEXTOUT_P(s, G0, cx - IP(zTW(s, f)/2), y, f, c);
+END;
+
+// Draw s right-aligned to x = rx.
+zRT(s, rx, y, f, c)
+BEGIN
+  TEXTOUT_P(s, G0, rx - zTW(s, f), y, f, c);
+END;
+
+// Parameters are never named i (the imaginary unit): "Syntax error" on the
+// device at the function header.
+// Cells: 1 TP (top left), 2 FN (top right), 3 FP (bottom left), 4 TN (bottom right).
+zGET(n)
+BEGIN
+  CASE
+    IF n == 1 THEN RETURN CMtp; END;
+    IF n == 2 THEN RETURN CMfn; END;
+    IF n == 3 THEN RETURN CMfp; END;
+    DEFAULT RETURN CMtn;
+  END;
+END;
+
+zPUT(n, v)
+BEGIN
+  CASE
+    IF n == 1 THEN CMtp := v; END;
+    IF n == 2 THEN CMfn := v; END;
+    IF n == 3 THEN CMfp := v; END;
+    DEFAULT CMtn := v;
+  END;
+END;
+
+// Box i as {x1, y1, x2, y2}.
+zBOX(n)
+BEGIN
+  LOCAL x1, y1;
+  // The four boxes touch: one 280x162 block from (40,56) to the right edge
+  // (319,217); the row labels use the 40px on the left.
+  x1 := IFTE(n == 1 OR n == 3, 40, 180);
+  y1 := IFTE(n <= 2, 56, 137);
+  RETURN {x1, y1, x1 + 139, y1 + 80};
+END;
+
+// A count as plain digits, whatever the Home number format is.
+zNUM(v)
+BEGIN
+  RETURN STRING(v, 1);
+END;
+
+// n/d as a percentage with 2 decimals, or "n/a" when d is 0.
+zPC(n, d)
+BEGIN
+  IF d == 0 THEN RETURN "n/a"; END;
+  RETURN STRING(ROUND(100*n/d, 2), 2, 2) + "%";
+END;
+
+// ---------------- matrix view ----------------
+
+zDRAWM()
+BEGIN
+  LOCAL fc := {#C6EFB0h, #F7C1C1h, #FBD9A6h, #BFDDF5h};
+  LOCAL bc := {#4E9A2Eh, #C84848h, #D08020h, #3A7CC0h};
+  LOCAL la := {"(True positive)", "(False negative)", "(False positive)", "(True negative)"};
+  LOCAL i, g, c, x1, y1, x2, y2, cx;
+
+  RECT_P(G0, 0, 20, 319, 219, #FFFFFFh, #FFFFFFh);
+  RECT_P(G0, 0, 20, 319, 37, #4F4F4Fh, #4F4F4Fh);
+  TEXTOUT_P("Confusion Matrix", G0, 4, 23, 2, #FFFFFFh);
+  IF DIM(zMsg) > 0 THEN
+    zRT(zMsg, 315, 23, 2, #FF3030h);
+    zMsg := "";
+  ELSE
+    zRT("Total " + zNUM(CMtp + CMfn + CMfp + CMtn), 315, 23, 2, #FFFFFFh);
+  END;
+
+  // Header cells behind the labels, pale lavender with dark text and lined up
+  // with the boxes: corner, top row y 38-55 over each column, left column
+  // x 0-39 beside each row; a 1px white gap separates neighbouring cells.
+  RECT_P(G0, 0, 38, 38, 55, #DCD6F0h, #DCD6F0h);
+  RECT_P(G0, 40, 38, 178, 55, #DCD6F0h, #DCD6F0h);
+  RECT_P(G0, 180, 38, 319, 55, #DCD6F0h, #DCD6F0h);
+  RECT_P(G0, 0, 56, 38, 135, #DCD6F0h, #DCD6F0h);
+  RECT_P(G0, 0, 137, 38, 217, #DCD6F0h, #DCD6F0h);
+
+  // Predicted class across the top, actual class down the left as a
+  // two-line label (columns centre at x 110 and 250, rows at y 96 and 177).
+  zCT("Predicted Pos.", 110, 39, 2, #3A3550h);
+  zCT("Predicted Neg.", 250, 39, 2, #3A3550h);
+  zCT("Actual", 20, 81, 2, #3A3550h);
+  zCT("Pos.", 20, 97, 2, #3A3550h);
+  zCT("Actual", 20, 162, 2, #3A3550h);
+  zCT("Neg.", 20, 178, 2, #3A3550h);
+
+  FOR i FROM 1 TO 4 DO
+    g := zBOX(i);
+    x1 := g(1); y1 := g(2); x2 := g(3); y2 := g(4);
+    // Fill only: no border and no gap to the neighbouring boxes.
+    RECT_P(G0, x1, y1, x2, y2, fc(i), fc(i));
+    cx := IP((x1 + x2)/2);
+    zCT(zNUM(zGET(i)), cx, y1 + 16, 6, #000000h);
+    zCT(la(i), cx, y1 + 48, 2, #303030h);
+    // The box the arrow keys have selected: a short bar in its darker colour.
+    IF i == zSel THEN RECT_P(G0, cx-20, y2-6, cx+20, y2-4, bc(i), bc(i)); END;
+  END;
+
+  DRAWMENU("TP", "FN", "FP", "TN", "Clear", "Num");
+END;
+
+// Ask for the count of cell i.
+zIN(n)
+BEGIN
+  LOCAL t := {"True positive", "False negative", "False positive", "True negative"};
+  LOCAL lb := {"TP:", "FN:", "FP:", "TN:"};
+  LOCAL v;
+  v := zGET(n);
+  IF INPUT({{v, [0], {30, 40, 2}}}, t(n), {lb(n)}, {"Count, 0 or more"}) THEN
+    IF v < 0 THEN zMsg := "Must be 0 or more"; ELSE zPUT(n, v); END;
+  END;
+END;
+
+// ---------------- metrics view (Num) ----------------
+
+zDRAWN()
+BEGIN
+  LOCAL xTP, xFN, xFP, xTN, d, i, y;
+  LOCAL nm, fm, vl;
+  xTP := CMtp; xFN := CMfn; xFP := CMfp; xTN := CMtn;
+
+  nm := {"Accuracy", "Precision", "Sensitivity", "Specificity", "F1 score",
+         "FPR", "FNR", "NPV", "Balanced acc.", "MCC"};
+  fm := {"(TP+TN)/Total", "TP/(TP+FP)", "TP/(TP+FN)", "TN/(TN+FP)", "2TP/(2TP+FP+FN)",
+         "FP/(FP+TN)", "FN/(FN+TP)", "TN/(TN+FN)", "(TPR+TNR)/2", "(TP·TN−FP·FN)/√(…)"};
+  vl := {zPC(xTP+xTN, xTP+xTN+xFP+xFN), zPC(xTP, xTP+xFP), zPC(xTP, xTP+xFN), zPC(xTN, xTN+xFP),
+         zPC(2*xTP, 2*xTP+xFP+xFN), zPC(xFP, xFP+xTN), zPC(xFN, xFN+xTP), zPC(xTN, xTN+xFN)};
+  IF xTP+xFN == 0 OR xTN+xFP == 0 THEN
+    vl(9) := "n/a";
+  ELSE
+    vl(9) := STRING(ROUND(50*(xTP/(xTP+xFN) + xTN/(xTN+xFP)), 2), 2, 2) + "%";
+  END;
+  d := (xTP+xFP)*(xTP+xFN)*(xTN+xFP)*(xTN+xFN);
+  IF d == 0 THEN vl(10) := "n/a"; ELSE vl(10) := STRING(ROUND((xTP*xTN - xFP*xFN)/SQRT(d), 4), 2, 4); END;
+
+  RECT_P(G0, 0, 20, 319, 219, #FFFFFFh, #FFFFFFh);
+  RECT_P(G0, 0, 20, 319, 37, #4F4F4Fh, #4F4F4Fh);
+  TEXTOUT_P("Metric", G0, 4, 23, 2, #FFFFFFh);
+  TEXTOUT_P("Formula", G0, 100, 23, 2, #FFFFFFh);
+  zRT("Value", 315, 23, 2, #FFFFFFh);
+
+  // Ten rows of 18px from y 38, as a table: |Metric|Formula|Value|.
+  FOR i FROM 1 TO 10 DO
+    y := 38 + 18*(i-1);
+    IF i MOD 2 == 0 THEN RECT_P(G0, 0, y, 319, y+17, #F0F0F0h, #F0F0F0h); END;
+    TEXTOUT_P(nm(i), G0, 4, y+2, 2, #000000h);
+    TEXTOUT_P(fm(i), G0, 100, y+4, 1, #505050h);
+    zRT(vl(i), 315, y+2, 2, #000000h);
+    LINE_P(G0, 0, y+17, 319, y+17, #D0D0D0h);
+  END;
+  LINE_P(G0, 96, 20, 96, 217, #B0B0B0h);
+  LINE_P(G0, 252, 20, 252, 217, #B0B0B0h);
+
+  DRAWMENU("", "", "", "", "", "Matrix");
+END;
+
+// ---------------- input ----------------
+
+zMENU(m)
+BEGIN
+  IF zV == 1 THEN
+    IF m >= 1 AND m <= 4 THEN zSel := m; zIN(m); END;
+    IF m == 5 THEN
+      IF MSGBOX("Clear all four values?", 1) THEN
+        CMtp := 0; CMfn := 0; CMfp := 0; CMtn := 0;
+      END;
+    END;
+    IF m == 6 THEN zV := 2; END;
+  ELSE
+    IF m == 6 THEN zV := 1; END;
+  END;
+END;
+
+zTAP(x, y)
+BEGIN
+  LOCAL i, g;
+  IF y >= 220 THEN zMENU(MIN(6, IP(x/53) + 1)); RETURN; END;
+  IF zV <> 1 THEN RETURN; END;
+  FOR i FROM 1 TO 4 DO
+    g := zBOX(i);
+    IF x >= g(1) AND x <= g(3) AND y >= g(2) AND y <= g(4) THEN
+      zSel := i; zIN(i); RETURN;
+    END;
+  END;
+END;
+
+zKEY(k)
+BEGIN
+  IF k == 11 THEN zV := IFTE(zV == 2, 1, 2); RETURN; END;
+  IF k == 1 OR k == 6 OR k == 4 THEN zV := 1; RETURN; END;
+  IF k == 5 THEN zEX := 1; RETURN; END;
+  IF k == 0 THEN zEX := 2; RETURN; END;
+  IF zV == 1 THEN
+    // Arrows move the selection; Enter edits the selected box.
+    IF k == 7  AND (zSel == 2 OR zSel == 4) THEN zSel := zSel - 1; END;
+    IF k == 8  AND (zSel == 1 OR zSel == 3) THEN zSel := zSel + 1; END;
+    IF k == 2  AND zSel >= 3 THEN zSel := zSel - 2; END;
+    IF k == 12 AND zSel <= 2 THEN zSel := zSel + 2; END;
+    IF k == 30 THEN zIN(zSel); END;
+  END;
+END;
+
+zDRAW()
+BEGIN
+  IF zV == 2 THEN zDRAWN(); ELSE zDRAWM(); END;
+END;
+
+zMAIN()
+BEGIN
+  LOCAL w, d;
+  zEX := 0; d := 1;
+  DIMGROB_P(G9, 640, 40);
+  WHILE zEX == 0 DO
+    IF d THEN
+      IFERR zDRAW(); THEN
+        RECT_P(G0, 0, 20, 319, 37, #4F4F4Fh, #4F4F4Fh);
+        TEXTOUT_P("Error while drawing", G0, 4, 23, 2, #FF3030h);
+      END;
+    END;
+    d := 0;
+    w := WAIT(-1);
+    IF TYPE(w) == 6 THEN
+      IF SIZE(w) >= 3 THEN
+        IF B→R(w(1)) == 3 THEN
+          IFERR zTAP(B→R(w(2)), B→R(w(3))); THEN zMsg := "Error on tap"; END;
+          d := 1;
+        END;
+      END;
+    ELSE
+      // A runtime error would end the app; report it in the strip instead.
+      IF w >= 0 THEN
+        IFERR zKEY(w); THEN zMsg := "Error on key " + STRING(w, 1); END;
+        d := 1;
+      END;
+    END;
+  END;
+  IF zEX == 2 THEN STARTVIEW(-4, 1); ELSE STARTVIEW(-1, 1); END;
+END;
+
+// ---------------- app views ----------------
+
+START()
+BEGIN
+  zV := 1;
+  STARTVIEW(-1, 1);
+  zMAIN();
+END;
+
+Symb()
+BEGIN
+  zV := 1;
+  zMAIN();
+END;
+
+Plot()
+BEGIN
+  zV := 1;
+  zMAIN();
+END;
+
+Num()
+BEGIN
+  zV := 2;
+  zMAIN();
+END;
