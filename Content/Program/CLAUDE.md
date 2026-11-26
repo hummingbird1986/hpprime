@@ -58,6 +58,12 @@ to use (decode each file, slice from the first `#pragma`/`EXPORT` to the last `E
 matching `\bEXPORT\s+(\w+)` — without the slice the regex misses the first export in Kit-compiled
 files, because binary junk abuts it and kills the `\b`).
 
+**`real + "string"` uses the Home number format.** `BtW + "bit"` prints `64.00000bit` under
+Fixed 5, not `64bit`. Wrap every number that ends up in user-facing text in `STRING(x, 1)`
+(Mode 1 = Standard): `BST()`, `zPX`'s `<base>:` tag and the `MSGBOX` bounds messages all do
+(fixed 2026-11-25). The tag one was a real bug — with `BtP:=1` and a base outside 2/8/10/16 the
+output carried `36.00000:ZZ`, which `zVR` could not parse back.
+
 **Never put a comment between a function signature and its `BEGIN`.** PPL drops the block and the
 compiler then reports the failure at EOF ("error on line <last+1>"), pointing nowhere near the
 real cause. Write the comment on the line *above* the signature. Trailing comments after a
@@ -82,7 +88,14 @@ the stack. `Probability.hpprgm` and `BaseN.hpprgm` are the reference shape:
 ### `CSTMenu.hpprgm`
 
 Defines `EXPORT CST := {...}` — the device's custom menu, a list of `{"page title", {"name", ...}}`
-pairs, plus `CstMenu()` which renders it and `KEY K_Menu()` which binds it. **Adding exports to any
+pairs, plus `CstMenu()` which renders it and `KEY K_Menu()` which binds it.
+
+A page may carry an **optional 3rd element: a string `EXPR()`'d on every redraw** and painted as a
+status strip under the title bar (added 2026-11-25). The Base pages pass `"BST()"`, so the menu
+shows the live word size / base / sign mode / carry / tag. Errors are swallowed (`IFERR` → `"?"`),
+so a page can name a program that is not on the device. It only refreshes when the menu is drawn
+(open, or page/menu navigation) — picking a soft key exits `CstMenu()`, so a change made from a
+menu key is visible the next time the menu is opened. **Adding exports to any
 program means adding them to `CST` here**, or they are unreachable from the keypad. Note there are
 two copies (`Content/CSTMenu.hpprgm` and `Content/Program/CSTMenu.hpprgm`) that have drifted; the
 one the device sees is whichever the Kit last synced.
@@ -168,9 +181,22 @@ To view a value you have in hand, either store it first (`BSTO(x)`, `BI2(x)`, �
 or use the two-argument `BX(x, b)`, which stores and renders in one call.
 
 On 2026-09-23 the base-mode functions were renamed `MBIN`/`MOCT`/`MDEC`/`MHEX` -> `BIN`/`OCT`/`DEC`/
-`HEX` (zero-argument, they act on the stored X), and `BN(x)`/`BSTO(x)` were both deleted — they were
-byte-identical to each other, and loading a value is now the **Value field of `BSet()`**, the
-Value field of `BSet()`, placed first in the dialog and read in the base set in that same dialog.
+`HEX` (zero-argument, they act on the stored X), and `BN(x)` was deleted as byte-identical to
+`BSTO(x)`. **`BSTO(x)` is still exported** (an earlier version of this note claimed both were
+deleted — wrong; check line 406 of `BaseN.txt` before repeating it).
+
+**`BSet()` no longer loads a value (2026-11-25).** It is settings only: Word size (edit field),
+Base, Sign, Negative, Tag. Value entry is `BSTO(x)` / `BI2`/`BI8`/`BI10`/`BI16` / `BI(x,b)` /
+`BX(x,b)` from Home — there is no dialog and no keypad-menu path for it any more.
+
+**Base and Sign are radio groups, not choose fields (2026-11-25).** Per the guide, an `INPUT`
+field spec `{var, real, {pos}}` is a **check box**, and a `real` > 1 pools it with the *next*
+`real`-1 check boxes into a radio group — so group members must be **consecutive in the variable
+list**, independent of where `pos` puts them on screen. `BSet()` declares `{b2,4}` + three
+followers at `1`, and `{mU,3}` + two followers, then positions them as two columns (Base left,
+Sign right). Two further constraints from the guide: `pos` (`{start %, width %, line from 0}`)
+must be given for **either none or all** fields, and a page holds **at most 7 lines** of controls
+(more spill onto extra pages and `title` then takes a list). The current layout is 6 lines.
 
 ## The stale-allocation trap — read this before debugging a syntax error
 
@@ -214,12 +240,11 @@ type `FF` bare in a dialog. An earlier note here blamed it for the compile failu
 wrong. Comments, the `zOK` helper, a list-valued `EXPORT` and the program name were all cleared
 the same way.
 
-Consequence: dialog value entry is not available, and quoted strings are needed for bases other
-than 2/8/10/16. Based literals (`#FFh`, `#1010b`, `#377o`, `#255d`) need no quotes and are the
-better answer when a user objects to typing them. Because the field is seeded with the current
-X in the *old* base while it is parsed in the *new* one, `zOK(s,b)` validates it first — `zVR`
-raises a message box and `KILL`s on a bad digit, which would abort the dialog after the settings
-were already applied. `MB(n)`, `MUNS`, `M1C`, `M2C` and the `W*` family keep their prefixes.
+That form is no longer used: `BSet()` dropped its Value field on 2026-11-25, and with it the
+`zOK(s,b)` helper and the whole hazard of a field seeded in the *old* base but parsed in the *new*
+one. For value entry from Home, based literals (`#FFh`, `#1010b`, `#377o`, `#255d`) need no quotes;
+other bases still need a quoted string. `MB(n)`, `MUNS`, `M1C`, `M2C` and the `W*` family keep
+their prefixes.
 
 That reintroduced the one program-level clash: `BIN` is exported by both BaseN and `Gray Code
 Conversion.hpprgm`. The latter is not synced to the device, so it is latent, not live.

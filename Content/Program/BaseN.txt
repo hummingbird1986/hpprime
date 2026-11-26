@@ -4,7 +4,9 @@ EXPORT BtW:=64;
 EXPORT BtB:=16;
 EXPORT BtM:=2;
 EXPORT BtS:=1;
-EXPORT BtP:=0;
+EXPORT BtP:=1;
+EXPORT BtZ:=0;
+EXPORT BtG:=1;
 EXPORT BtC:=0;
 EXPORT BtXh:=0;
 EXPORT BtXl:=0;
@@ -117,7 +119,7 @@ BEGIN
     IF b == 8  THEN RETURN "O:"; END;
     IF b == 10 THEN RETURN "D:"; END;
     IF b == 16 THEN RETURN "H:"; END;
-    DEFAULT RETURN b + ":";
+    DEFAULT RETURN STRING(b,1) + ":";
   END;
 END;
 
@@ -198,7 +200,7 @@ BEGIN
         d := INSTRING(dg, c) - 1;
         IF b <= 36 AND d > 35 AND d < 62 THEN d := d - 26; END;
         IF d < 0 OR d >= b THEN
-          MSGBOX("Bad digit '" + c + "' for base " + b);
+          MSGBOX("Bad digit '" + c + "' for base " + STRING(b,1));
           KILL;
         END;
         q := zQR(l*b + d, 4294967296);
@@ -237,10 +239,43 @@ BEGIN
   RETURN {1, w};
 END;
 
+// Digits per group: a nibble in binary, a byte in hex, threes in octal and
+// decimal, no grouping for bases with no bit-aligned grouping.
+zGR(b)
+BEGIN
+  IF b == 2  THEN RETURN 4; END;
+  IF b == 16 THEN RETURN 2; END;
+  IF b == 8 OR b == 10 THEN RETURN 3; END;
+  RETURN 0;
+END;
+
+// Space s out every zGR(b) digits, counting from the right.
+zGP(s, b)
+BEGIN
+  LOCAL g, n, r;
+  g := zGR(b);
+  IF g == 0 THEN RETURN s; END;
+  n := DIM(s); r := "";
+  WHILE n > g DO
+    r := " " + MID(s, n-g+1, g) + r;
+    n := n - g;
+  END;
+  RETURN MID(s, 1, n) + r;
+END;
+
+// Digits needed to show a full BtW-bit word in base b.
+zPW(b)
+BEGIN
+  LOCAL n, m, t;
+  n := 1; m := b; t := 2^BtW;
+  WHILE m < t DO m := m*b; n := n+1; END;
+  RETURN n;
+END;
+
 zS(v, b)
 BEGIN
   LOCAL dg, sm, s, h;
-  LOCAL l, q, r, ng;
+  LOCAL l, q, r, ng, k;
   dg := zDG(); ng := 0; h := v(1); l := v(2);
   IF BtS == 2 OR (BtS == 1 AND b == 10) THEN
     sm := zSM(v); ng := sm(1); q := sm(2); h := q(1); l := q(2);
@@ -251,6 +286,11 @@ BEGIN
     r := zQR(q(2)*4294967296 + l, b); l := r(1);
     s := MID(dg, r(2)+1, 1) + s;
   UNTIL h == 0 AND l == 0;
+  IF BtZ == 1 THEN
+    k := zPW(b);
+    WHILE DIM(s) < k DO s := "0" + s; END;
+  END;
+  IF BtG == 1 THEN s := zGP(s, b); END;
   IF ng THEN s := "-" + s; END;
   RETURN zPX(b) + s;
 END;
@@ -322,7 +362,7 @@ END;
 zCKN(n)
 BEGIN
   IF n < 0 OR n >= BtW OR n <> IP(n) THEN
-    MSGBOX("Bit number must be 0.." + (BtW-1));
+    MSGBOX("Bit number must be 0.." + STRING(BtW-1,1));
     KILL;
   END;
 END;
@@ -337,37 +377,72 @@ END;
 EXPORT BST()
 BEGIN
   LOCAL ms := {"UNS", "1C", "2C"};
-  LOCAL ts := {"tag off", "tag on"};
-  LOCAL km, kt;
-  km := BtM+1; kt := BtP+1;
+  LOCAL ts := {"off", "on"};
+  LOCAL km, kt, kz, kg;
+  km := BtM+1; kt := BtP+1; kz := BtZ+1; kg := BtG+1;
   IF km < 1 OR km > 3 THEN km := 3; END;
   IF kt < 1 OR kt > 2 THEN kt := 1; END;
-  RETURN BtW + "bit  base" + BtB + "  " + ms(km) + "  C=" + BtC + "  " + ts(kt);
+  IF kz < 1 OR kz > 2 THEN kz := 1; END;
+  IF kg < 1 OR kg > 2 THEN kg := 1; END;
+  RETURN STRING(BtW,1) + "bit | base" + STRING(BtB,1) + " | " + ms(km)
+         + " | C=" + STRING(BtC,1)
+         + " | Tag:" + ts(kt) + " | Padding:" + ts(kz)
+         + " | Grp:" + ts(kg);
 END;
 
 EXPORT BSet()
 BEGIN
-  LOCAL w, b, m, s, v, p;
-  w := BtW; b := BtB; m := BtM+1; s := BtS; p := BtP+1;
-  IF m < 1 OR m > 3 THEN m := 3; END;
+  LOCAL bl := {2, 8, 10, 16};
+  LOCAL w, s, p, z, g;
+  LOCAL cy, k, j, m;
+  LOCAL b2, b8, bA, bG, mU, m1, m2;
+  w := BtW; s := BtS; p := BtP; z := BtZ; g := BtG; cy := BtC;
   IF s < 1 OR s > 3 THEN s := 1; END;
-  IF p < 1 OR p > 2 THEN p := 1; END;
-  v := "";
-  IF INPUT({{v, [2]}, w, b,
-            {m, {"Unsigned", "1's complement", "2's complement"}},
-            {s, {"Sign in base 10 only", "Sign in all bases", "Always bit pattern"}},
-            {p, {"Off", "On"}}},
+  IF p <> 1 THEN p := 0; END;
+  IF z <> 1 THEN z := 0; END;
+  IF g <> 1 THEN g := 0; END;
+  IF cy <> 1 THEN cy := 0; END;
+  j := 4;
+  FOR k FROM 1 TO 4 DO
+    IF BtB == bl(k) THEN j := k; END;
+  END;
+  b2 := (j == 1); b8 := (j == 2); bA := (j == 3); bG := (j == 4);
+  m := BtM;
+  IF m < 0 OR m > 2 THEN m := 2; END;
+  mU := (m == 0); m1 := (m == 1); m2 := (m == 2);
+  IF INPUT({{w, [0], {30, 14, 0}}, {p, 1, {84, 8, 0}}, {z, 1, {84, 8, 4}},
+            {g, 1, {84, 8, 5}}, {cy, 1, {30, 8, 5}},
+            {b2, 4, {30, 8, 1}}, {b8, 1, {30, 8, 2}},
+            {bA, 1, {30, 8, 3}}, {bG, 1, {30, 8, 4}},
+            {mU, 3, {84, 8, 1}}, {m1, 1, {84, 8, 2}},
+            {m2, 1, {84, 8, 3}},
+            {s, {"Base 10 only", "All bases", "Bit pattern"}, {30, 62, 6}}},
            "BaseN Setup",
-           {"Value =", "Word size =", "Base =", "Sign =", "Negative =", "Tag ="},
-           {"Digits only, read in the Base below. Empty keeps the current value",
-            "Bits, 1-64", "Base, 2-64", "Unsigned / 1's / 2's complement",
-            "How negative values are displayed",
-            "Prefix output with its base, e.g. H:FF"}) THEN
-    w := IP(w); b := IP(b);
+           {"Word size", "Tag", "Padding", "Grouping", "Carry",
+            "Bin", "Oct", "Dec", "Hex",
+            "Unsigned", "1's compl", "2's compl",
+            "Negative"},
+           {"Bits, 1-64", "Prefix output with its base, e.g. H:FF",
+            "Pad to the word size with leading zeros",
+            "Space digits out: 00 00 00 15, 0000 0101",
+            "Carry flag; RLC and RRC rotate through it",
+            "Base 2", "Base 8", "Base 10", "Base 16",
+            "Unsigned", "1's complement", "2's complement",
+            "How negative values are displayed"}) THEN
+    w := IP(w);
     IF w < 1 OR w > 64 THEN MSGBOX("Word size must be 1-64"); ELSE BtW := w; END;
-    IF b < 2 OR b > 64 THEN MSGBOX("Base must be 2-64"); ELSE BtB := b; END;
-    BtM := m-1; BtS := s; BtP := p-1;
-    IF DIM(v) > 0 THEN zPUT(zVR(v, BtB)); END;
+    IF b2 THEN BtB := 2;  END;
+    IF b8 THEN BtB := 8;  END;
+    IF bA THEN BtB := 10; END;
+    IF bG THEN BtB := 16; END;
+    IF mU THEN BtM := 0; END;
+    IF m1 THEN BtM := 1; END;
+    IF m2 THEN BtM := 2; END;
+    BtS := s;
+    IF p == 1 THEN BtP := 1; ELSE BtP := 0; END;
+    IF z == 1 THEN BtZ := 1; ELSE BtZ := 0; END;
+    IF g == 1 THEN BtG := 1; ELSE BtG := 0; END;
+    IF cy == 1 THEN BtC := 1; ELSE BtC := 0; END;
   END;
   RETURN zO(zRC());
 END;
@@ -487,13 +562,13 @@ END;
 
 EXPORT BMKR(n)
 BEGIN
-  IF n < 0 OR n > BtW THEN MSGBOX("n must be 0.." + BtW); KILL; END;
+  IF n < 0 OR n > BtW THEN MSGBOX("n must be 0.." + STRING(BtW,1)); KILL; END;
   RETURN zO(zMR(n));
 END;
 
 EXPORT BMKL(n)
 BEGIN
-  IF n < 0 OR n > BtW THEN MSGBOX("n must be 0.." + BtW); KILL; END;
+  IF n < 0 OR n > BtW THEN MSGBOX("n must be 0.." + STRING(BtW,1)); KILL; END;
   RETURN zO(zNOT(zMR(BtW-n)));
 END;
 
