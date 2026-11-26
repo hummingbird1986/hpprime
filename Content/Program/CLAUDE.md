@@ -248,3 +248,47 @@ their prefixes.
 
 That reintroduced the one program-level clash: `BIN` is exported by both BaseN and `Gray Code
 Conversion.hpprgm`. The latter is not synced to the device, so it is latent, not live.
+
+## BaseNApp (added 2026-11-26)
+
+`Content/Application/BaseNApp.hpappdir/` packages BaseN as a full-screen app. Readable source:
+`Content/Program/BaseNApp.txt`. Rebuild `BaseNApp.hpappprgm` from the `.txt` with the plain-variant
+writer above, plus a trailing `\0` (see below). The `.hpapp` is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB).
+
+- **Self-contained.** It carries a private copy of BaseN's word engine (`Bt*` renamed to `BN*`) and
+  exports **no functions**, only the app variables `BNw BNb BNm BNs BNp BNz BNg BNc BNstk`.
+  It does not need `BaseN.hpprgm` on the device, and its state is separate from BaseN's. Engine fixes
+  in `BaseN.txt` must be ported by hand.
+- **The engine copy has no `MSGBOX`/`KILL` paths.** `KILL` would end the app. Errors go to `zMsg`,
+  which shows once in red in the status strip. `zPR` replaces `zVR`: entry keys only produce
+  digits valid in the current base, so there is nothing to reject.
+- **Screen:** rows 0-19 (system title bar and annunciators) are never drawn on. Strip y 20-37:
+  `Base 16 · <page>` left, `|Size: 64|2's C|T P G|` right (carry C in red, no popup, as the
+  HP-16C's annunciator). Panel BCD/HEX/DEC/OCT/BIN of X (no Tag prefix there), then the stack,
+  menu at 220. Menu pages and numeric action codes are in `zPG`. Top menu: Conf. Base Shift
+  Logic f.Conv Gray / ASCII. `Bin/Oct/Dec/Hex` **switch the working base** (marked `■`);
+  `W.SZE` (code 4) pops X as the word size, HP-16C WSIZE style. Conf. holds only Tag/Padding/
+  Grouping/Carry, sign mode and Negative. f.Conv (page 5) switches to hex on entry and restores
+  the previous base on exit (`zOB`, checked in `zMAIN` by page change).
+- **Entry line:** digits of the current base; `.`/EEX make a real (only f▶32/f▶64 take it);
+  ALPHA / Shift ALPHA type letters (`zAK` key codes) as text, which only ASCII▶ takes.
+- Entry follows Base48: `START()` → `STARTVIEW(-1,1)` and then the loop. `Num()` re-enters it.
+  Home leaves the app to Home view, and Apps leaves it to the App Library.
+- PPL runtime pitfalls found on the device: `INSTRING` on an empty string raises a runtime error
+  (use `zHAS`, a MID scan); don't write `ᴇ` inside quotes, build it with `CHAR(7431)` (`zEE()`).
+  An uncaught runtime error silently ends the app, so `zMAIN` wraps `zKEY`/`zTAP`/`zDRAW` in `IFERR`
+  and shows "Error on key N" in the strip instead.
+- **At most 8 names per `LOCAL` statement.** 9 gave "Syntax error in program line N" pointing at the
+  LOCAL line (seen twice: `zFD` line 340, `zSET` line 374). Split longer lists over two LOCAL lines.
+  (The first time it was misdiagnosed as the names `e`/`bias`; they were renamed `ex`/`bs` anyway.)
+- Stack entries are `{h, l}`, or `{h, l, text}` after 32▶f/64▶f/▶ASCII (shown as text; ops drop the tag).
+- **Append a `\0` (UTF-16 NUL) to the plain payload** (`(src + '\0').encode('utf-16-le')`, length
+  field includes it). With it, the Kit's compiled copy ended exactly at the source (verified
+  2026-11-26); without it the Kit appended stale text / `0xFFFF` filler. Still verify after compiling.
+- After **every** plain rewrite, wait for the Kit to compile it (magic `7C 61 8A B2`) and check what
+  follows the source: the Kit may append stale text or `0xFFFF` filler up to the next `\0\0` (seen
+  even when the new source was longer; once it grew the text area to 64 KB). Blank that span with
+  spaces in the compiled file (same length, so header sizes stay valid). Small edits that fit the
+  space-padded region can be patched straight into the compiled file instead of a plain rewrite.
+- The Kit accepts a plain-variant `.hpappprgm` and rewrites it to the compiled form within ~1-3 min;
+  the device copy under `Calculators/` follows shortly after.
