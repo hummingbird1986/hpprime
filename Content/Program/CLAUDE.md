@@ -90,12 +90,11 @@ the stack. `Probability.hpprgm` and `BaseN.hpprgm` are the reference shape:
 Defines `EXPORT CST := {...}` — the device's custom menu, a list of `{"page title", {"name", ...}}`
 pairs, plus `CstMenu()` which renders it and `KEY K_Menu()` which binds it.
 
-A page may carry an **optional 3rd element: a string `EXPR()`'d on every redraw** and painted as a
-status strip under the title bar (added 2026-11-25). The Base pages pass `"BST()"`, so the menu
-shows the live word size / base / sign mode / carry / tag. Errors are swallowed (`IFERR` → `"?"`),
-so a page can name a program that is not on the device. It only refreshes when the menu is drawn
-(open, or page/menu navigation) — picking a soft key exits `CstMenu()`, so a change made from a
-menu key is visible the next time the menu is opened. **Adding exports to any
+The Base pages and the `BST()` status strip (optional 3rd page element) were removed on
+2026-11-27: BaseN is used through Base16C now, so `CST` no longer reaches any BaseN export.
+The Probability page and its 14 distribution pages were removed the same day: ProbCalc covers them,
+so `CST` no longer reaches `Probability.hpprgm`. Perm/Comb (nPr, nCr, n!) moved to Main → `Perm`.
+**Adding exports to any
 program means adding them to `CST` here**, or they are unreachable from the keypad. Note there are
 two copies (`Content/CSTMenu.hpprgm` and `Content/Program/CSTMenu.hpprgm`) that have drifted; the
 one the device sees is whichever the Kit last synced.
@@ -249,12 +248,16 @@ their prefixes.
 That reintroduced the one program-level clash: `BIN` is exported by both BaseN and `Gray Code
 Conversion.hpprgm`. The latter is not synced to the device, so it is latent, not live.
 
-## BaseNApp (added 2026-11-26)
+## Base16C (added 2026-11-26 as BaseNApp, renamed Base16C 2026-11-27)
 
-`Content/Application/BaseNApp.hpappdir/` packages BaseN as a full-screen app. Readable source:
-`Content/Program/BaseNApp.txt`. Rebuild `BaseNApp.hpappprgm` from the `.txt` with the plain-variant
-writer above, plus a trailing `\0` (see below). The `.hpapp` is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB).
+`Content/Application/Base16C.hpappdir/` packages BaseN as a full-screen app. Readable source:
+`Content/Program/Base16C.txt`. Rebuild `Base16C.hpappprgm`
+from the `.txt` with the plain-variant writer above, plus a trailing `\0` (see below). The `.hpapp`
+is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB).
 
+- **Why not `BaseN`:** app and program names share the `Name.var` namespace on the device, so an
+  app called BaseN would clash with `BaseN.hpprgm`. `Base16C` was checked against the tree and the
+  user guide (no hits); both can live on the calculator together.
 - **Self-contained.** It carries a private copy of BaseN's word engine (`Bt*` renamed to `BN*`) and
   exports **no functions**, only the app variables `BNw BNb BNm BNs BNp BNz BNg BNc BNstk`.
   It does not need `BaseN.hpprgm` on the device, and its state is separate from BaseN's. Engine fixes
@@ -278,8 +281,9 @@ writer above, plus a trailing `\0` (see below). The `.hpapp` is a byte copy of `
   (use `zHAS`, a MID scan); don't write `ᴇ` inside quotes, build it with `CHAR(7431)` (`zEE()`).
   An uncaught runtime error silently ends the app, so `zMAIN` wraps `zKEY`/`zTAP`/`zDRAW` in `IFERR`
   and shows "Error on key N" in the strip instead.
-- **Never name a function parameter `i`** (the imaginary unit): "Syntax error in program line N"
-  at the function header (ConfMatrix `zGET(i)`). `LOCAL i` is fine.
+- **Never name a function parameter `i` or `e`** (imaginary unit / Euler's number): "Syntax error
+  in program line N" at the function header (ConfMatrix `zGET(i)`, ProbCalc `zPW(b, e)` line 81).
+  `LOCAL i` is fine.
 - **At most 8 names per `LOCAL` statement.** 9 gave "Syntax error in program line N" pointing at the
   LOCAL line (seen twice: `zFD` line 340, `zSET` line 374). Split longer lists over two LOCAL lines.
   (The first time it was misdiagnosed as the names `e`/`bias`; they were renamed `ex`/`bs` anyway.)
@@ -298,14 +302,42 @@ writer above, plus a trailing `\0` (see below). The `.hpapp` is a byte copy of `
 ## ConfMatrix (added 2026-11-27)
 
 `Content/Application/ConfMatrix.hpappdir/` is a 2x2 confusion-matrix app; readable source
-`Content/Program/ConfMatrix.txt`, built the same way as BaseNApp (plain variant + trailing `\0`,
-`.hpapp` copied from BaseNApp, generated 38x38 icon). Exports only `CMtp CMfn CMfp CMtn`.
+`Content/Program/ConfMatrix.txt`, built the same way as Base16C (plain variant + trailing `\0`,
+`.hpapp` copied from Base16C, generated 38x38 icon). Exports only `CMtp CMfn CMfp CMtn`.
 
-- Matrix view: four borderless pastel boxes (TP green, FN red, FP orange, TN blue) touching,
-  x 40-319 / y 56-217 (`zBOX`), with pale-lavender (`#DCD6F0`) header cells for
-  "Predicted Pos./Neg." and "Actual Pos./Neg.". Tap a box, its menu key, or arrows + Enter to
+- Matrix view: four pastel boxes (TP green, FN red, FP orange, TN blue) with a 1px border in
+  the darker colour, on the same grid as the pale-lavender (`#DCD6F0`) header cells: columns
+  x 0-38 / 40-178 / 180-319, rows y 38-54 / 56-135 / 137-217, 1px white gap between every cell
+  (`zBOX`). Tap a box, its menu key, or arrows + Enter to
   enter a count (INPUT dialog). Clear zeroes all four.
 - Num key (11) or the Num menu key: table Metric | Formula | Value (Accuracy, Precision,
   Sensitivity, Specificity, F1, FPR, FNR, NPV, Balanced acc., MCC); "n/a" on a zero denominator.
   Counts print with `STRING(v,1)` and percentages with `STRING(x,2,2)`, so the Home number
   format (often Fixed) does not leak in.
+
+## ProbCalc (added 2026-11-27)
+
+`Content/Application/ProbCalc.hpappdir/` is the probability app; readable source
+`Content/Program/ProbCalc.txt`, built like Base16C (plain variant + trailing `\0`, `.hpapp` copied
+from ConfMatrix, generated 38x38 icon). Self-contained (does not need `Probability.hpprgm`), exports
+only state: `PCd` (distribution 1-14, order in `zDN`), `PCp` (parameter list per distribution),
+`PCx`, `PCy` (upper bound for Between), `PCa` (α), `PCt` (tail 1 Left, 2 Right, 3 Two, 4 Between).
+`ProbCalc` and the `PC*` names were checked against the tree and the guide: no hits.
+
+- Landing page (`zM == 0`, where `START()` opens): F1-F6 are distribution names, 3 pages (6/6/2,
+  Left/Right), no Back. Body `zDRAWL` lists all 14 in three boxes, one per page, coloured blue/green/orange; the
+  current page's box is strong (double border), the others pale. Selected distribution: solid bar,
+  white text. Left/Right on the landing page also moves the selection to the new column's first row. F-key or Enter
+  opens a distribution. **Inside a distribution F6 is always Back** to the landing page (every calc
+  page and the Plot view); Esc, Symb and Menu go there too.
+- Calc view: strip + parameter/E/Var lines + result tape + entry line; menu pages (Left/Right):
+  Set pdf ◢ ◣ ◢◣ Back / ◢⁻¹ ◣⁻¹ p-val Tail α= Back / Crit x= Plot Clear · Back. A typed number is
+  the argument; with no entry the key uses `PCx` (or opens a dialog). `◢◣` is `a ENTER b ◢◣`.
+  Up/Down switch distribution and reset x to the critical value at α for the current tail.
+- Plot view (Plot key): pdf curve (bars if discrete), shaded tail: **red if p ≤ α, blue if not**
+  (Between always blue); α critical values as dashed purple lines. Menu Left/Right/Two/Betw/x=/Back (α= is on calc page 2);
+  arrows move x (Up/Down ×10). Two-tailed: Crit uses α/2 per tail and the screen shows
+  `α/2 = …` (`zAT`); p = 2·min(P(X≤x), P(X≥x)) is compared with α (same test); the far tail is shaded
+  from the quantile holding the same probability, so for discrete distributions the shaded area
+  can differ slightly from p.
+- Unverified on the device as of 2026-11-27 (Kit was not running when it was written).

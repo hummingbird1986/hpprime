@@ -1,0 +1,158 @@
+EXPORT CSTpos := {1,1};
+EXPORT CST :=
+{   
+
+{ "Main ▶"                           , {{"Perm","@Perm/Comb (HOME)"},{"Matrix","@Matrix ▶"},{"Alg","@Algebra"},{"Entr","@Entropy (HOME)"},{"Misc","@Misc"},""}
+    },
+
+{ "Perm/Comb (HOME)"                 , {{"nPr","PERM()"},{"nCr","COMB()"},{"n!","!"},"","",{"Back","@Main ▶"}}
+    },
+
+{ "Matrix ▶"                         , {{"Matrix","@Matrix (HOME)"},{"EROs","@EROs (CAS)"},{"LinAlg","@Linear Algebra (CAS)"},"","",{"Back","@Main ▶"}}
+    },
+
+{ "Matrix (HOME)"                    , {"IDN()","MAT0()","TRN()","INV()","RREF()",{"Back","@Matrix ▶"},
+                                        "DET()","","","","",{"Back","@Matrix ▶"}}
+    },
+
+{ "EROs (CAS)"                       , {"row⇅()","row↰()","row⌕()","ROW⇅","ROW↰",{"Back","@Matrix ▶"},
+                                        "ROW⌕","","","","",{"Back","@Matrix ▶"}}
+    },
+
+{ "Linear Algebra (CAS)"             , {"gs_proc()","proj()","lsq()","va()","ut()",{"Back","@Matrix ▶"},
+                                        "nm()","","","","",{"Back","@Matrix ▶"}}
+    },
+
+{ "Algebra"                          , {"RT","NRT","pf()","ld()","",{"Back","@Main ▶"}}
+    },
+
+{ "Entropy (HOME)"                   , {{"H(list)","ENTROPY()"},{"H(str)","STRENT()"},{"H(pw)","PWENT()"},"","",{"Back","@Main ▶"}}
+    },
+
+{ "Misc"                             , {"TAX",{"+/-","Plus_Minus()"},"IEEE32","IEEE64","",{"Back","@Main ▶"}}
+    }
+
+  };
+
+CstMenu();
+KEY K_Menu()
+BEGIN
+  CstMenu();
+END;
+
+EXPORT CstMenu()
+BEGIN
+
+LOCAL n,w,m,mx,my,lpos,lmenu;
+LOCAL menu,menuCUR,menuTMP,menuBAR,menuCMD,menuTITLE;
+
+REPEAT
+ menu:={}; menuCUR:={}; menuTMP:={}; menuBAR:={}; menuCMD:={};
+
+ IF TYPE(CST)   ≠6 THEN RETURN "Error in CST var format";    END;
+ IF TYPE(CSTpos)≠6 THEN RETURN "Error in CSTpos var format"; END;
+ IF SIZE(CSTpos)≠2 THEN RETURN "Error in CSTpos var format"; END;
+
+ IF CSTpos(1)<1 OR CSTpos(1)>SIZE(CST) THEN CSTpos(1):=1; END;
+
+ IF TYPE(CST(CSTpos(1)))≠6 THEN RETURN "Error in CST var format"; END;
+
+ // List of lists, pick level in use:
+ menuTMP   := CST(CSTpos(1));
+ menuTITLE := menuTMP(1);
+ menu      := menuTMP(2);
+ IF CSTpos(2)<1 OR 6*CSTpos(2)-5>SIZE(menu) THEN CSTpos(2):=1; END;
+
+ // Go where the menu was left:
+ menuCUR:=menu({6*CSTpos(2)-5,6*CSTpos(2)});
+ FOR n FROM 1 TO SIZE(menuCUR) DO
+  IF TYPE(menuCUR(n))==6 THEN  // Field {"disp","output"}:
+   menuTMP:=menuCUR(n);
+   IF TYPE(menuTMP(1))==2 AND TYPE(menuTMP(2))==2 THEN
+    menuBAR(n):=menuTMP(1);
+    menuCMD(n):=menuTMP(2);
+   ELSE
+    RETURN "Error in CST var format";
+   END;
+  ELSE
+   IF TYPE(menuCUR(n))==2 THEN // Field "disp":
+    menuBAR(n):=menuCUR(n);
+    menuCMD(n):=menuCUR(n);
+   ELSE
+    RETURN "Error in CST var format";
+   END;
+  END;
+ END;
+
+ DRAWMENU(menuBAR);
+ 
+ lpos :=CEILING(SIZE(menu)/6); // Last menu position
+ lmenu:=SIZE(CST); // Total # of menus
+ 
+ // TEXTOUT_P(text, [G], x, y, [font], [textColor], [width], [backgroundColor]) returns text width
+ //TEXTOUT_P("                                                                                 ",G0,45,2,3,#FFFFFFh,200,#2F2F2Fh);
+ //TEXTOUT_P(menuTITLE,G0,130-TEXTOUT_P("A",G1,0,0)*DIM(menuTITLE)/2,2,3,#FFFFFFh,200,#2F2F2Fh);
+ //TEXTOUT_P("m."+CSTpos(1)+"/"+lmenu+" p."+CSTpos(2)+"/"+lpos,G0,185,8,1,#F0F0F0h,200,#2F2F2Fh);
+
+RECT_P(G0,0,0,319,20,#2F2F2Fh,#2F2F2Fh);
+TEXTOUT_P(menuTITLE,G0,130-TEXTOUT_P("A",G1,0,0)*DIM(menuTITLE)/2,2,3,#FFFFFFh,200,#2F2F2Fh);
+//TEXTOUT_P("m."+CSTpos(1)+"/"+lmenu+" p."+CSTpos(2)+"/"+lpos,G0,185,8,1,#F0F0F0h,200,#2F2F2Fh);
+TEXTOUT_P("m."+STRING(CSTpos(1),1)+"/"+STRING(lmenu,1)+" p."+STRING(CSTpos(2),1)+"/"+STRING(lpos,1),G0,185,8,1,#F0F0F0h,200,#2F2F2Fh);
+
+ w:=WAIT(−1); 
+ IF TYPE(w)==6 THEN // Mouse event, check if mouse click:
+  IF B→R(w(1))==3 THEN // Pick coordinates
+   mx:=B→R(w(2));
+   my:=B→R(w(3));
+   // Check if in menu area:
+   IF my>220 THEN
+    CASE
+     IF   0≤mx≤ 51 THEN m:=1; END;
+     IF  53≤mx≤104 THEN m:=2; END;
+     IF 106≤mx≤157 THEN m:=3; END;
+     IF 159≤mx≤210 THEN m:=4; END;
+     IF 212≤mx≤263 THEN m:=5; END;
+     IF 265≤mx≤319 THEN m:=6; END;
+     DEFAULT
+    END;
+    IF m≥1 AND m≤SIZE(menuBAR) THEN // Check for short menu
+     // An output of "@title" is a folder jump, not text to insert.
+     // The title is matched as a prefix, so "@Matrix" finds "Matrix ▶".
+     IF INSTRING(menuCMD(m),"@")==1 THEN
+      menuTMP:=MID(menuCMD(m),2);
+      FOR n FROM 1 TO SIZE(CST) DO
+       menuCUR:=CST(n);
+       IF TYPE(menuCUR(1))==2 AND INSTRING(menuCUR(1),menuTMP)==1 THEN
+        CSTpos(1):=n;
+        CSTpos(2):=1;
+        BREAK;
+       END;
+      END;
+     ELSE
+      RETURN menuCMD(m);
+     END;
+    END;
+   END; // in menu area?
+  END; // mouse clicked?
+ ELSE // mouse event?
+  // Key event.
+  CASE
+   // Directional pad actions.
+   // Previous-next menu:
+   IF w==7  AND CSTpos(2)> 1    THEN CSTpos(2):=CSTpos(2)-1; END;
+   IF w==7  AND CSTpos(2)==1    THEN CSTpos(2):=lpos;        END;
+   IF w==8  AND CSTpos(2)< lpos THEN CSTpos(2):=CSTpos(2)+1; END;
+   IF w==8  AND CSTpos(2)==lpos THEN CSTpos(2):=1;           END;
+   // Up-down menu:
+   IF w==2  AND CSTpos(1)> 1     THEN CSTpos(1):=CSTpos(1)-1; CSTpos(2):=1; END;
+   IF w==2  AND CSTpos(1)==1     THEN CSTpos(1):=lmenu; CSTpos(2):=1;       END;
+   IF w==12 AND CSTpos(1)< lmenu THEN CSTpos(1):=CSTpos(1)+1; CSTpos(2):=1; END;
+   IF w==12 AND CSTpos(1)==lmenu THEN CSTpos(1):=1; CSTpos(2):=1;           END;
+   // Press Esc or On to exit:
+   IF w==4 OR w==46 THEN RETURN ""; END;
+  DEFAULT
+  END; // case
+ END; // key event?
+UNTIL 0; // repeat
+
+END;

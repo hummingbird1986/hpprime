@@ -1,6 +1,6 @@
 #pragma mode( separator(.,;) integer(h64) )
 
-// ConfMatrix - 2x2 confusion matrix as a full-screen app (layout after BaseNApp).
+// ConfMatrix - 2x2 confusion matrix as a full-screen app (layout after Base16C).
 // Matrix view: tap a box (or its menu key, or arrows + Enter) to enter its count.
 // Num key: table of metrics with their formulas. Num / Esc / Symb: back.
 // Exports only the four counts, so they survive leaving the app.
@@ -61,12 +61,12 @@ END;
 // Box i as {x1, y1, x2, y2}.
 zBOX(n)
 BEGIN
-  LOCAL x1, y1;
-  // The four boxes touch: one 280x162 block from (40,56) to the right edge
-  // (319,217); the row labels use the 40px on the left.
-  x1 := IFTE(n == 1 OR n == 3, 40, 180);
-  y1 := IFTE(n <= 2, 56, 137);
-  RETURN {x1, y1, x1 + 139, y1 + 80};
+  // Lined up with the header cells: columns x 40-178 and 180-319, rows
+  // y 56-135 and 137-217, so a 1px white gap separates every cell.
+  IF n == 1 THEN RETURN {40, 56, 178, 135}; END;
+  IF n == 2 THEN RETURN {180, 56, 319, 135}; END;
+  IF n == 3 THEN RETURN {40, 137, 178, 217}; END;
+  RETURN {180, 137, 319, 217};
 END;
 
 // A count as plain digits, whatever the Home number format is.
@@ -102,11 +102,11 @@ BEGIN
   END;
 
   // Header cells behind the labels, pale lavender with dark text and lined up
-  // with the boxes: corner, top row y 38-55 over each column, left column
+  // with the boxes: corner, top row y 38-54 over each column, left column
   // x 0-39 beside each row; a 1px white gap separates neighbouring cells.
-  RECT_P(G0, 0, 38, 38, 55, #DCD6F0h, #DCD6F0h);
-  RECT_P(G0, 40, 38, 178, 55, #DCD6F0h, #DCD6F0h);
-  RECT_P(G0, 180, 38, 319, 55, #DCD6F0h, #DCD6F0h);
+  RECT_P(G0, 0, 38, 38, 54, #DCD6F0h, #DCD6F0h);
+  RECT_P(G0, 40, 38, 178, 54, #DCD6F0h, #DCD6F0h);
+  RECT_P(G0, 180, 38, 319, 54, #DCD6F0h, #DCD6F0h);
   RECT_P(G0, 0, 56, 38, 135, #DCD6F0h, #DCD6F0h);
   RECT_P(G0, 0, 137, 38, 217, #DCD6F0h, #DCD6F0h);
 
@@ -122,8 +122,8 @@ BEGIN
   FOR i FROM 1 TO 4 DO
     g := zBOX(i);
     x1 := g(1); y1 := g(2); x2 := g(3); y2 := g(4);
-    // Fill only: no border and no gap to the neighbouring boxes.
-    RECT_P(G0, x1, y1, x2, y2, fc(i), fc(i));
+    // Pastel fill with a 1px border in the box's darker colour.
+    RECT_P(G0, x1, y1, x2, y2, bc(i), fc(i));
     cx := IP((x1 + x2)/2);
     zCT(zNUM(zGET(i)), cx, y1 + 16, 6, #000000h);
     zCT(la(i), cx, y1 + 48, 2, #303030h);

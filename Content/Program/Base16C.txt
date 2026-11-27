@@ -1,6 +1,6 @@
 #pragma mode( separator(.,;) integer(h64) )
 
-// BaseNApp - the BaseN toolkit as a full-screen app (layout after Base48).
+// Base16C - the BaseN toolkit as a full-screen app (layout after Base48).
 // Self-contained: the word engine below is a private copy of BaseN.hpprgm's,
 // so the app runs without BaseN on the device and exports no functions.
 // Its state is its own (BN*), separate from BaseN's Bt* globals.

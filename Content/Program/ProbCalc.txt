@@ -1,0 +1,1165 @@
+#pragma mode( separator(.,;) integer(h64) )
+
+// ProbCalc - probability distributions as a full-screen app (layout after Base16C).
+// The functions of Probability.hpprgm (pdf/pmf, P(X<=x), P(X>=x), P(a<=X<=b),
+// lower/upper quantiles, E, Var) for 14 distributions, plus p-values,
+// critical values and a Plot view that shades the tail area: red when
+// p <= alpha (reject H0), blue when p > alpha. Left / Right / Two-tailed / Between.
+// Self-contained: does not need Probability.hpprgm. Exports only its state.
+
+// Distribution 1-14 (see zDN), parameters per distribution, statistic x,
+// upper bound y (Between), alpha, tail 1 Left 2 Right 3 Two 4 Between.
+EXPORT PCd:=1;
+EXPORT PCp:={{0,1},{},{10},{5},{5,10},{0.2},{0,1},{10,0.5},{0.5},{0.2},{3,0.5},{3},{20,6,5},{20,6,3}};
+EXPORT PCx:=1.96;
+EXPORT PCy:=1;
+EXPORT PCa:=0.05;
+EXPORT PCt:=3;
+
+zDN:={"Normal","Std Normal","Student t","Chi-square","F","Exponential","Uniform",
+      "Binomial","Bernoulli","Geometric","Neg Binomial","Poisson","Hypergeometric","Neg Hypergeo"};
+zSN:={"Norm","StdN","t","χ²","F","Expo","Unif","Binom","Bern","Geo","NegB","Poiss","HypG","NHpG"};
+zSY:={"N","N","t","χ²","F","Exp","U","B","Bern","Geo","NB","Poi","HG","NHG"};
+zPNL:={{"μ =","σ ="},{},{"df ="},{"df ="},{"d1 =","d2 ="},{"λ ="},{"a =","b ="},
+       {"n =","p ="},{"p ="},{"p ="},{"k =","p ="},{"λ ="},{"N =","K =","n ="},{"N =","K =","r ="}};
+zPHL:={{"Mean μ","Standard deviation σ > 0"},{},
+       {"Degrees of freedom (one sample: n-1)"},{"Degrees of freedom"},
+       {"Numerator df","Denominator df"},{"Rate λ > 0 (mean 1/λ)"},
+       {"Lower bound a","Upper bound b > a"},
+       {"Number of trials n","Success probability p"},{"Success probability p"},
+       {"Success probability p (X = trial of 1st success)"},
+       {"Successes k (X = trial of k-th success)","Success probability p"},
+       {"Rate λ (mean)"},
+       {"Population N","Successes in population K","Draws n"},
+       {"Population N","Successes in population K","Stop at r-th success"}};
+zTN:={"Left","Right","Two","Betw"};
+
+// Calc menu, three pages. Item = {label, code}; code -1 = back to the landing page.
+zCP:={{"Set",1},{"pdf",2},{"◢",3},{"◣",4},{"◢◣",5},{"Back",-1},
+      {"◢⁻¹",6},{"◣⁻¹",7},{"p-val",8},{"Tail",9},{"α=",10},{"Back",-1},
+      {"Crit",11},{"x=",14},{"Plot",12},{"Clear",13},{"",0},{"Back",-1}};
+zKD:={47,42,43,44,37,38,39,32,33,34};
+
+// View 1 Calc, 2 Plot; menu mode 0 landing (distributions), 1 calc; menu page.
+zV:=1;
+zM:=1;
+zPP:=1;
+zCmd:="";
+zMsg:="";
+zEX:=0;
+// Result tape, newest first: {label, value text}.
+zH:={};
+
+// ---------------- helpers ----------------
+
+// Pixel width of s in font f, measured on the scratch GROB G9 (sized in zMAIN).
+zTW(s, f)
+BEGIN
+  RETURN TEXTOUT_P(s, G9, 0, 0, f);
+END;
+
+zCT(s, cx, y, f, c)
+BEGIN
+  TEXTOUT_P(s, G0, cx - IP(zTW(s, f)/2), y, f, c);
+END;
+
+zRT(s, rx, y, f, c)
+BEGIN
+  TEXTOUT_P(s, G0, rx - zTW(s, f), y, f, c);
+END;
+
+// A number as text in Standard format, 6 significant digits, whatever the
+// Home number format is. Strings pass through ("n/a", "∞").
+zN(v)
+BEGIN
+  IF TYPE(v) == 2 THEN RETURN v; END;
+  IF v == IP(v) AND ABS(v) < 10^12 THEN RETURN STRING(v, 1); END;
+  RETURN STRING(ROUND(v, -6), 1);
+END;
+
+// The significance text for the current tail: "α = 0.05", or for Two
+// "α/2 = 0.025" (each tail; the doubled p is still compared with α).
+zAT()
+BEGIN
+  IF PCt == 3 THEN RETURN "α/2 = " + zN(PCa/2); END;
+  RETURN "α = " + zN(PCa);
+END;
+
+// b^e with 0^0 = 1 (geometric / negative binomial with p = 1).
+zPW(b, ex)
+BEGIN
+  IF ex == 0 THEN RETURN 1; END;
+  RETURN b^ex;
+END;
+
+// The EEX mark (U+1D07), built with CHAR (see Base16C).
+zEE()
+BEGIN
+  RETURN CHAR(7431);
+END;
+
+// 1 if string s contains character c (INSTRING fails on an empty string).
+zHAS(s, c)
+BEGIN
+  LOCAL j;
+  FOR j FROM 1 TO DIM(s) DO
+    IF MID(s, j, 1) == c THEN RETURN 1; END;
+  END;
+  RETURN 0;
+END;
+
+zDS()
+BEGIN
+  RETURN PCd >= 8;
+END;
+
+// ---------------- distributions ----------------
+
+// Support {lo, hi} of a discrete distribution (hi = 10^9: unbounded).
+zSUP()
+BEGIN
+  LOCAL g := PCp(PCd);
+  CASE
+    IF PCd == 8  THEN RETURN {0, g(1)}; END;
+    IF PCd == 9  THEN RETURN {0, 1}; END;
+    IF PCd == 10 THEN RETURN {1, 10^9}; END;
+    IF PCd == 11 THEN RETURN {g(1), 10^9}; END;
+    IF PCd == 12 THEN RETURN {0, 10^9}; END;
+    IF PCd == 13 THEN RETURN {MAX(0, g(3)-(g(1)-g(2))), MIN(g(3), g(2))}; END;
+    IF PCd == 14 THEN RETURN {g(3), g(1)-g(2)+g(3)}; END;
+    DEFAULT RETURN {-10^99, 10^99};
+  END;
+END;
+
+// Density f(x) (continuous) or P(X = x) (discrete).
+zPDF(x)
+BEGIN
+  LOCAL g := PCp(PCd);
+  LOCAL s;
+  CASE
+    IF PCd == 1 THEN RETURN NORMALD(g(1), g(2), x); END;
+    IF PCd == 2 THEN RETURN NORMALD(0, 1, x); END;
+    IF PCd == 3 THEN RETURN STUDENT(g(1), x); END;
+    IF PCd == 4 THEN
+      IF x <= 0 THEN RETURN 0; END;
+      RETURN CHISQUARE(g(1), x);
+    END;
+    IF PCd == 5 THEN
+      IF x <= 0 THEN RETURN 0; END;
+      RETURN FISHER(g(1), g(2), x);
+    END;
+    IF PCd == 6 THEN
+      IF x < 0 THEN RETURN 0; END;
+      RETURN g(1)*EXP(-g(1)*x);
+    END;
+    IF PCd == 7 THEN
+      IF x < g(1) OR x > g(2) THEN RETURN 0; END;
+      RETURN 1/(g(2)-g(1));
+    END;
+  END;
+  IF x <> FLOOR(x) THEN RETURN 0; END;
+  s := zSUP();
+  IF x < s(1) OR x > s(2) THEN RETURN 0; END;
+  CASE
+    IF PCd == 8  THEN RETURN BINOMIAL(g(1), g(2), x); END;
+    IF PCd == 9  THEN RETURN IFTE(x == 1, g(1), 1-g(1)); END;
+    IF PCd == 10 THEN RETURN g(1)*zPW(1-g(1), x-1); END;
+    IF PCd == 11 THEN RETURN COMB(x-1, g(1)-1)*g(2)^g(1)*zPW(1-g(2), x-g(1)); END;
+    IF PCd == 12 THEN RETURN POISSON(g(1), x); END;
+    IF PCd == 13 THEN RETURN COMB(g(2), x)*COMB(g(1)-g(2), g(3)-x)/COMB(g(1), g(3)); END;
+    DEFAULT RETURN COMB(x-1, g(3)-1)*COMB(g(1)-x, g(2)-g(3))/COMB(g(1), g(2));
+  END;
+END;
+
+// P(X <= x).
+zCDF(x)
+BEGIN
+  LOCAL g := PCp(PCd);
+  LOCAL s, k, j, c;
+  CASE
+    IF PCd == 1 THEN RETURN NORMALD_CDF(g(1), g(2), x); END;
+    IF PCd == 2 THEN RETURN NORMALD_CDF(0, 1, x); END;
+    IF PCd == 3 THEN RETURN STUDENT_CDF(g(1), x); END;
+    IF PCd == 4 THEN
+      IF x <= 0 THEN RETURN 0; END;
+      RETURN CHISQUARE_CDF(g(1), x);
+    END;
+    IF PCd == 5 THEN
+      IF x <= 0 THEN RETURN 0; END;
+      RETURN FISHER_CDF(g(1), g(2), x);
+    END;
+    IF PCd == 6 THEN
+      IF x <= 0 THEN RETURN 0; END;
+      RETURN 1-EXP(-g(1)*x);
+    END;
+    IF PCd == 7 THEN
+      IF x <= g(1) THEN RETURN 0; END;
+      IF x >= g(2) THEN RETURN 1; END;
+      RETURN (x-g(1))/(g(2)-g(1));
+    END;
+  END;
+  k := FLOOR(x);
+  s := zSUP();
+  IF k < s(1) THEN RETURN 0; END;
+  IF k >= s(2) THEN RETURN 1; END;
+  CASE
+    IF PCd == 8  THEN RETURN BINOMIAL_CDF(g(1), g(2), k); END;
+    IF PCd == 9  THEN RETURN 1-g(1); END;
+    IF PCd == 10 THEN RETURN 1-zPW(1-g(1), k); END;
+    IF PCd == 12 THEN RETURN POISSON_CDF(g(1), k); END;
+  END;
+  c := 0;
+  FOR j FROM s(1) TO k DO c := c + zPDF(j); END;
+  RETURN MIN(1, c);
+END;
+
+// P(X >= x). Normal and t use the mirror image to keep small tails accurate.
+zSF(x)
+BEGIN
+  LOCAL g := PCp(PCd);
+  CASE
+    IF PCd == 1 THEN RETURN NORMALD_CDF(g(1), g(2), 2*g(1)-x); END;
+    IF PCd == 2 THEN RETURN NORMALD_CDF(0, 1, -x); END;
+    IF PCd == 3 THEN RETURN STUDENT_CDF(g(1), -x); END;
+    IF PCd == 6 THEN
+      IF x <= 0 THEN RETURN 1; END;
+      RETURN EXP(-g(1)*x);
+    END;
+  END;
+  IF zDS() THEN RETURN MAX(0, 1-zCDF(CEILING(x)-1)); END;
+  RETURN MAX(0, 1-zCDF(x));
+END;
+
+// Lower quantile: continuous x with P(X<=x) = q; discrete smallest x with
+// P(X<=x) >= q.
+zICDF(q)
+BEGIN
+  LOCAL g := PCp(PCd);
+  LOCAL s, lo, hi, k, c, cap;
+  CASE
+    IF PCd == 1 THEN RETURN NORMALD_ICDF(g(1), g(2), q); END;
+    IF PCd == 2 THEN RETURN NORMALD_ICDF(0, 1, q); END;
+    IF PCd == 3 THEN RETURN STUDENT_ICDF(g(1), q); END;
+    IF PCd == 4 THEN RETURN CHISQUARE_ICDF(g(1), q); END;
+    IF PCd == 5 THEN RETURN FISHER_ICDF(g(1), g(2), q); END;
+    IF PCd == 6 THEN RETURN -LN(1-q)/g(1); END;
+    IF PCd == 7 THEN RETURN g(1)+q*(g(2)-g(1)); END;
+  END;
+  s := zSUP(); lo := s(1); hi := s(2);
+  IF q <= 0 THEN RETURN lo; END;
+  IF q >= 1 AND hi < 10^9 THEN RETURN hi; END;
+  q := MIN(q, 1-10^-12);
+  // A starting guess, then step to the exact boundary.
+  k := -1;
+  IFERR
+    IF PCd == 8 THEN k := BINOMIAL_ICDF(g(1), g(2), q); END;
+    IF PCd == 12 THEN k := POISSON_ICDF(g(1), q); END;
+    IF PCd == 10 THEN
+      IF g(1) >= 1 THEN k := 1; ELSE k := CEILING(LN(1-q)/LN(1-g(1))); END;
+    END;
+  THEN
+    k := -1;
+  END;
+  IF k >= 0 THEN
+    k := MAX(lo, MIN(hi, k));
+    WHILE k > lo AND zCDF(k-1) >= q-10^-12 DO k := k-1; END;
+    WHILE k < hi AND zCDF(k) < q-10^-12 DO k := k+1; END;
+    RETURN k;
+  END;
+  k := lo; c := zPDF(lo);
+  cap := MIN(hi, lo+200000);
+  WHILE c < q-10^-12 AND k < cap DO
+    k := k+1;
+    c := c + zPDF(k);
+  END;
+  RETURN k;
+END;
+
+// Discrete: largest x with P(X<=x) <= q (lo-1 if there is none).
+zLQ(q)
+BEGIN
+  LOCAL k;
+  k := zICDF(q);
+  IF zCDF(k) > q+10^-12 THEN k := k-1; END;
+  RETURN k;
+END;
+
+// Upper quantile: continuous x with P(X>=x) = q; discrete smallest x with
+// P(X>=x) <= q.
+zISF(q)
+BEGIN
+  LOCAL g := PCp(PCd);
+  LOCAL s;
+  CASE
+    IF PCd == 1 THEN RETURN 2*g(1)-NORMALD_ICDF(g(1), g(2), q); END;
+    IF PCd == 2 THEN RETURN -NORMALD_ICDF(0, 1, q); END;
+    IF PCd == 3 THEN RETURN -STUDENT_ICDF(g(1), q); END;
+    IF PCd == 6 THEN RETURN -LN(q)/g(1); END;
+    IF PCd == 7 THEN RETURN g(2)-q*(g(2)-g(1)); END;
+  END;
+  IF NOT zDS() THEN RETURN zICDF(1-q); END;
+  s := zSUP();
+  IF q >= 1 THEN RETURN s(1); END;
+  RETURN zICDF(1-q)+1;
+END;
+
+// {E(X), Var(X)}; a string where it is undefined.
+zMV()
+BEGIN
+  LOCAL g := PCp(PCd);
+  LOCAL m, v;
+  m := "n/a"; v := "n/a";
+  CASE
+    IF PCd == 1 THEN m := g(1); v := g(2)^2; END;
+    IF PCd == 2 THEN m := 0; v := 1; END;
+    IF PCd == 3 THEN
+      IF g(1) > 1 THEN m := 0; v := "∞"; END;
+      IF g(1) > 2 THEN v := g(1)/(g(1)-2); END;
+    END;
+    IF PCd == 4 THEN m := g(1); v := 2*g(1); END;
+    IF PCd == 5 THEN
+      IF g(2) > 2 THEN m := g(2)/(g(2)-2); v := "∞"; END;
+      IF g(2) > 4 THEN v := 2*g(2)^2*(g(1)+g(2)-2)/(g(1)*(g(2)-2)^2*(g(2)-4)); END;
+    END;
+    IF PCd == 6 THEN m := 1/g(1); v := 1/g(1)^2; END;
+    IF PCd == 7 THEN m := (g(1)+g(2))/2; v := (g(2)-g(1))^2/12; END;
+    IF PCd == 8 THEN m := g(1)*g(2); v := g(1)*g(2)*(1-g(2)); END;
+    IF PCd == 9 THEN m := g(1); v := g(1)*(1-g(1)); END;
+    IF PCd == 10 THEN m := 1/g(1); v := (1-g(1))/g(1)^2; END;
+    IF PCd == 11 THEN m := g(1)/g(2); v := g(1)*(1-g(2))/g(2)^2; END;
+    IF PCd == 12 THEN m := g(1); v := g(1); END;
+    IF PCd == 13 THEN
+      m := g(3)*g(2)/g(1);
+      v := 0;
+      IF g(1) > 1 THEN v := g(3)*(g(2)/g(1))*(1-g(2)/g(1))*(g(1)-g(3))/(g(1)-1); END;
+    END;
+    IF PCd == 14 THEN
+      m := g(3)*(g(1)+1)/(g(2)+1);
+      v := g(3)*(g(1)-g(2))*(g(1)+1)*(g(2)+1-g(3))/((g(2)+1)^2*(g(2)+2));
+    END;
+  END;
+  RETURN {m, v};
+END;
+
+// "" if parameter list g is valid for the current distribution, else why not.
+zCHK(g)
+BEGIN
+  LOCAL d := PCd;
+  CASE
+    IF d == 1 AND g(2) <= 0 THEN RETURN "σ must be > 0"; END;
+    IF (d == 3 OR d == 4) AND g(1) <= 0 THEN RETURN "df must be > 0"; END;
+    IF d == 5 AND (g(1) <= 0 OR g(2) <= 0) THEN RETURN "df must be > 0"; END;
+    IF (d == 6 OR d == 12) AND g(1) <= 0 THEN RETURN "λ must be > 0"; END;
+    IF d == 7 AND g(2) <= g(1) THEN RETURN "Need b > a"; END;
+    IF d == 8 AND (g(1) < 0 OR g(1) <> IP(g(1))) THEN RETURN "n: integer >= 0"; END;
+    IF d == 8 AND (g(2) < 0 OR g(2) > 1) THEN RETURN "Need 0 <= p <= 1"; END;
+    IF d == 9 AND (g(1) < 0 OR g(1) > 1) THEN RETURN "Need 0 <= p <= 1"; END;
+    IF d == 10 AND (g(1) <= 0 OR g(1) > 1) THEN RETURN "Need 0 < p <= 1"; END;
+    IF d == 11 AND (g(1) < 1 OR g(1) <> IP(g(1))) THEN RETURN "k: integer >= 1"; END;
+    IF d == 11 AND (g(2) <= 0 OR g(2) > 1) THEN RETURN "Need 0 < p <= 1"; END;
+  END;
+  IF d == 13 OR d == 14 THEN
+    IF g(1) <> IP(g(1)) OR g(2) <> IP(g(2)) OR g(3) <> IP(g(3)) THEN RETURN "N, K, n/r: integers"; END;
+    IF g(1) < 1 OR g(2) < 0 OR g(2) > g(1) THEN RETURN "Need 0 <= K <= N"; END;
+    IF d == 13 AND (g(3) < 0 OR g(3) > g(1)) THEN RETURN "Need 0 <= n <= N"; END;
+    IF d == 14 AND (g(3) < 1 OR g(3) > g(2)) THEN RETURN "Need 1 <= r <= K"; END;
+  END;
+  RETURN "";
+END;
+
+// p for the current tail at x (Between: P(a<=X<=b) with a, b = x, y).
+zPV()
+BEGIN
+  LOCAL a, b;
+  CASE
+    IF PCt == 1 THEN RETURN zCDF(PCx); END;
+    IF PCt == 2 THEN RETURN zSF(PCx); END;
+    IF PCt == 3 THEN RETURN MIN(1, 2*MIN(zCDF(PCx), zSF(PCx))); END;
+  END;
+  a := MIN(PCx, PCy); b := MAX(PCx, PCy);
+  IF zDS() THEN RETURN MAX(0, zCDF(FLOOR(b)) - zCDF(CEILING(a)-1)); END;
+  RETURN MAX(0, zCDF(b) - zCDF(a));
+END;
+
+// Shading bounds {b1, b2}: Left X<=b1, Right X>=b1, Two X<=b1 or X>=b2
+// (the far tail holds the same probability as the near one), Between b1..b2.
+zTB()
+BEGIN
+  LOCAL x, pl, pr, lo, hi;
+  x := PCx;
+  IF PCt <= 2 THEN RETURN {x, x}; END;
+  IF PCt == 4 THEN RETURN {MIN(x, PCy), MAX(x, PCy)}; END;
+  pl := zCDF(x); pr := zSF(x);
+  IF pl <= pr THEN
+    lo := x; hi := 10^99;
+    IF pl > 0 THEN
+      IFERR hi := zISF(pl); THEN hi := 10^99; END;
+    END;
+  ELSE
+    hi := x; lo := -10^99;
+    IF pr > 0 THEN
+      IFERR
+        IF zDS() THEN lo := zLQ(pr); ELSE lo := zICDF(pr); END;
+      THEN
+        lo := -10^99;
+      END;
+    END;
+  END;
+  RETURN {lo, hi};
+END;
+
+// 1 if value v lies in the shaded region.
+zIN(v, tb)
+BEGIN
+  CASE
+    IF PCt == 1 THEN RETURN v <= tb(1); END;
+    IF PCt == 2 THEN RETURN v >= tb(1); END;
+    IF PCt == 3 THEN RETURN v <= tb(1) OR v >= tb(2); END;
+    DEFAULT RETURN v >= tb(1) AND v <= tb(2);
+  END;
+END;
+
+// Critical values at alpha for the current tail: {{value, side}}, side -1 for
+// a lower rejection region (X <= c), +1 for an upper one (X >= c).
+zCRIT()
+BEGIN
+  LOCAL a, r;
+  a := PCa; r := {};
+  IFERR
+    IF PCt == 1 THEN r := {{IFTE(zDS(), zLQ(a), zICDF(a)), -1}}; END;
+    IF PCt == 2 THEN r := {{zISF(a), 1}}; END;
+    IF PCt == 3 THEN
+      IF zDS() THEN r := {{zLQ(a/2), -1}}; ELSE r := {{zICDF(a/2), -1}}; END;
+      r(2) := {zISF(a/2), 1};
+    END;
+  THEN
+    r := {};
+  END;
+  RETURN r;
+END;
+
+// A starting x for a new distribution: the critical value at alpha for the
+// current tail, so the plot opens on a shaded area of exactly alpha.
+zDEFX()
+BEGIN
+  IFERR
+    CASE
+      IF PCt == 1 THEN PCx := zICDF(PCa); END;
+      IF PCt == 2 THEN PCx := zISF(PCa); END;
+      IF PCt == 3 THEN PCx := zISF(PCa/2); END;
+      DEFAULT PCx := zICDF(0.25); PCy := zISF(0.25);
+    END;
+  THEN
+    PCx := 0; PCy := 1;
+  END;
+END;
+
+// Name, title "X ~ N(0, 1)" and parameter line of the current distribution.
+zTTL()
+BEGIN
+  LOCAL g := PCp(PCd);
+  LOCAL s, k;
+  IF PCd == 2 THEN RETURN "Z ~ N(0, 1)"; END;
+  s := "";
+  FOR k FROM 1 TO SIZE(g) DO
+    IF k > 1 THEN s := s + ", "; END;
+    s := s + zN(g(k));
+  END;
+  RETURN "X ~ " + zSY(PCd) + "(" + s + ")";
+END;
+
+zPLN()
+BEGIN
+  LOCAL g := PCp(PCd);
+  LOCAL nm := zPNL(PCd);
+  LOCAL s, k;
+  IF SIZE(g) == 0 THEN RETURN "μ = 0   σ = 1"; END;
+  s := "";
+  FOR k FROM 1 TO SIZE(g) DO
+    IF k > 1 THEN s := s + "    "; END;
+    s := s + nm(k) + " " + zN(g(k));
+  END;
+  RETURN s;
+END;
+
+// ---------------- plot ----------------
+
+// A round tick step for the range u0..u1 (at least 1 for discrete).
+zNS(u0, u1)
+BEGIN
+  LOCAL st, mg, n;
+  st := (u1-u0)/5;
+  IF st <= 0 THEN RETURN 1; END;
+  mg := 10^FLOOR(LOG(st));
+  n := st/mg;
+  st := IFTE(n < 1.5, 1, IFTE(n < 3, 2, IFTE(n < 7, 5, 10)))*mg;
+  IF zDS() THEN st := MAX(1, ROUND(st, 0)); END;
+  RETURN st;
+END;
+
+// Plot range {u0, u1} in X units. Discrete: bars are centred on integers, so
+// the range runs from lo-0.5 to hi+0.5. Widened to show x (and y in Between)
+// unless it is far off scale.
+zRNG()
+BEGIN
+  LOCAL g := PCp(PCd);
+  LOCAL u0, u1, w, q, s, lo, hi, v;
+  LOCAL vs, k;
+  vs := {PCx};
+  IF PCt == 4 THEN vs(2) := PCy; END;
+  IF zDS() THEN
+    s := zSUP(); lo := s(1); hi := s(2);
+    IF hi - lo > 40 THEN
+      lo := MAX(lo, zICDF(0.0005));
+      hi := MIN(hi, zICDF(0.9995));
+    END;
+    w := hi - lo + 1;
+    FOR k FROM 1 TO SIZE(vs) DO
+      v := vs(k);
+      IF v < lo AND v > lo-2*w THEN lo := MAX(s(1), FLOOR(v)); END;
+      IF v > hi AND v < hi+2*w THEN hi := MIN(s(2), CEILING(v)); END;
+    END;
+    IF hi - lo > 300 THEN hi := lo + 300; END;
+    RETURN {lo-0.5, hi+0.5};
+  END;
+  CASE
+    IF PCd == 1 THEN u0 := g(1)-4*g(2); u1 := g(1)+4*g(2); END;
+    IF PCd == 2 THEN u0 := -4; u1 := 4; END;
+    IF PCd == 3 THEN
+      q := MIN(8, MAX(4, STUDENT_ICDF(g(1), 0.995)));
+      u0 := -q; u1 := q;
+    END;
+    IF PCd == 4 THEN u0 := 0; u1 := CHISQUARE_ICDF(g(1), 0.999); END;
+    IF PCd == 5 THEN u0 := 0; u1 := MIN(12, MAX(4, FISHER_ICDF(g(1), g(2), 0.99))); END;
+    IF PCd == 6 THEN u0 := 0; u1 := -LN(0.001)/g(1); END;
+    DEFAULT
+      w := g(2)-g(1);
+      u0 := g(1)-w/4; u1 := g(2)+w/4;
+  END;
+  w := u1 - u0;
+  FOR k FROM 1 TO SIZE(vs) DO
+    v := vs(k);
+    IF v < u0 AND v > u0-2*w THEN u0 := v - 0.05*w; END;
+    IF v > u1 AND v < u1+2*w THEN u1 := v + 0.05*w; END;
+  END;
+  IF PCd >= 4 AND PCd <= 6 THEN u0 := MAX(0, u0); END;
+  RETURN {u0, u1};
+END;
+
+// X value -> pixel column (plot spans x 8..311).
+zXP(v, u0, u1)
+BEGIN
+  RETURN 8 + ROUND((v-u0)*303/(u1-u0), 0);
+END;
+
+// Headline of the plot: what the shaded area is.
+zPL(pv)
+BEGIN
+  CASE
+    IF PCt == 1 THEN RETURN "P(X≤" + zN(PCx) + ") = " + zN(pv); END;
+    IF PCt == 2 THEN RETURN "P(X≥" + zN(PCx) + ") = " + zN(pv); END;
+    IF PCt == 3 THEN RETURN "Two-tailed p = " + zN(pv); END;
+    DEFAULT RETURN "P(" + zN(MIN(PCx,PCy)) + "≤X≤" + zN(MAX(PCx,PCy)) + ") = " + zN(pv);
+  END;
+END;
+
+zDRAWP()
+BEGIN
+  LOCAL r, u0, u1, ds, tb, pv, sg, fc;
+  LOCAL lc, k, px, xv, ys, ym, py, pl;
+  LOCAL cr, c, s, hw, st, tk, v, nb;
+
+  ds := zDS();
+  r := zRNG(); u0 := r(1); u1 := r(2);
+  tb := zTB();
+  pv := zPV();
+  // Red when the test rejects H0 at alpha, blue otherwise (and for Between).
+  sg := PCt <> 4 AND pv <= PCa;
+  fc := IFTE(sg, #F4A6A6h, #A9CCF2h);
+  lc := IFTE(sg, #C02020h, #1F5FB0h);
+
+  // Headline, then x / alpha and the verdict.
+  TEXTOUT_P(zPL(pv), G0, 4, 40, 3, lc);
+  s := zAT();
+  IF PCt == 3 THEN s := "x = " + zN(PCx) + "    " + s; END;
+  TEXTOUT_P(s, G0, 4, 60, 2, #404040h);
+  IF PCt <> 4 THEN
+    zRT(IFTE(sg, "p ≤ α: reject H0", "p > α: keep H0"), 316, 60, 2, lc);
+  END;
+
+  ys := {}; ym := 0;
+  IF ds THEN
+    nb := ROUND(u1-u0, 0);
+    FOR k FROM 1 TO nb DO
+      IFERR v := zPDF(u0 + k - 0.5); THEN v := 0; END;
+      ys(k) := v;
+      ym := MAX(ym, v);
+    END;
+    IF ym <= 0 THEN ym := 1; END;
+    hw := MAX(0, IP(303/nb*0.4));
+    FOR k FROM 1 TO nb DO
+      xv := u0 + k - 0.5;
+      px := zXP(xv, u0, u1);
+      py := 197 - ROUND(ys(k)/ym*104, 0);
+      IF zIN(xv, tb) THEN
+        RECT_P(G0, px-hw, py, px+hw, 197, lc, fc);
+      ELSE
+        RECT_P(G0, px-hw, py, px+hw, 197, #909090h, #DADADAh);
+      END;
+    END;
+  ELSE
+    FOR px FROM 0 TO 303 DO
+      xv := u0 + px*(u1-u0)/303;
+      IFERR v := zPDF(xv); THEN v := 0; END;
+      ys(px+1) := v;
+    END;
+    // The two end columns are left out of the scale: chi-square / F with
+    // 1 df run to infinity at 0.
+    FOR k FROM 3 TO 302 DO ym := MAX(ym, ys(k)); END;
+    IF ym <= 0 THEN ym := 1; END;
+    pl := {};
+    FOR px FROM 0 TO 303 DO
+      xv := u0 + px*(u1-u0)/303;
+      py := 197 - MIN(112, ROUND(ys(px+1)/ym*104, 0));
+      pl(px+1) := py;
+      IF zIN(xv, tb) THEN LINE_P(G0, 8+px, 197, 8+px, py, fc); END;
+    END;
+    FOR px FROM 1 TO 303 DO
+      LINE_P(G0, 7+px, pl(px), 8+px, pl(px+1), #202020h);
+      LINE_P(G0, 7+px, pl(px)-1, 8+px, pl(px+1)-1, #202020h);
+    END;
+    // x (and the mirrored bound when two-tailed, or a and b) as solid lines.
+    tk := IFTE(PCt <= 2, {tb(1)}, tb);
+    FOR k FROM 1 TO SIZE(tk) DO
+      IF tk(k) >= u0 AND tk(k) <= u1 THEN
+        px := zXP(tk(k), u0, u1);
+        LINE_P(G0, px, 92, px, 197, lc);
+      END;
+    END;
+  END;
+
+  // Axis, ticks and labels.
+  LINE_P(G0, 0, 198, 319, 198, #000000h);
+  st := zNS(u0, u1);
+  FOR k FROM CEILING(u0/st) TO FLOOR(u1/st) DO
+    v := k*st;
+    px := zXP(v, u0, u1);
+    LINE_P(G0, px, 198, px, 201, #000000h);
+    s := zN(v);
+    c := zTW(s, 1);
+    IF px-c/2 >= 0 AND px+c/2 <= 319 THEN zCT(s, px, 204, 1, #404040h); END;
+  END;
+
+  // Critical values at alpha: dashed purple lines (between bars if discrete).
+  cr := zCRIT();
+  FOR k FROM 1 TO SIZE(cr) DO
+    c := cr(k);
+    v := c(1);
+    IF ds THEN v := v - c(2)*0.5; END;
+    IF v >= u0 AND v <= u1 THEN
+      px := zXP(v, u0, u1);
+      FOR py FROM 92 TO 194 STEP 6 DO LINE_P(G0, px, py, px, py+3, #7A3DB8h); END;
+      zCT(IFTE(PCt == 3, "α/2", "α"), px, 79, 1, #7A3DB8h);
+    END;
+  END;
+END;
+
+// ---------------- calc view ----------------
+
+zDRAWC()
+BEGIN
+  LOCAL mv, s, k, y, it;
+  mv := zMV();
+  TEXTOUT_P(zPLN(), G0, 4, 40, 2, #000000h);
+  zRT("x = " + zN(PCx), 316, 40, 2, #000000h);
+  s := "E(X) = " + zN(mv(1)) + "    Var(X) = " + zN(mv(2));
+  IF TYPE(mv(2)) == 0 THEN s := s + "    SD = " + zN(SQRT(mv(2))); END;
+  TEXTOUT_P(s, G0, 4, 59, 1, #505050h);
+  zRT(zTN(PCt) + " · " + zAT(), 316, 59, 1, #505050h);
+  LINE_P(G0, 0, 74, 319, 74, #A0A0A0h);
+  IF SIZE(zH) == 0 THEN
+    TEXTOUT_P("Type x, then a menu key:", G0, 8, 90, 2, #909090h);
+    TEXTOUT_P("pdf  ◢ P(X≤x)  ◣ P(X≥x)  ◢◣ a ENTER b", G0, 8, 108, 2, #909090h);
+    TEXTOUT_P("◢⁻¹ ◣⁻¹ quantile of p   p-val   Crit", G0, 8, 126, 2, #909090h);
+    TEXTOUT_P("Plot key: curve with the p area shaded", G0, 8, 144, 2, #909090h);
+    TEXTOUT_P("Up/Down: distribution   Help: keys", G0, 8, 162, 2, #909090h);
+  END;
+  // Tape, newest at the bottom, six rows of 20px from y 78.
+  FOR k FROM 1 TO MIN(6, SIZE(zH)) DO
+    it := zH(k);
+    y := 178 - 20*(k-1);
+    IF k MOD 2 == 0 THEN RECT_P(G0, 0, y, 319, y+19, #F2F2F2h, #F2F2F2h); END;
+    TEXTOUT_P(it(1), G0, 4, y+4, 2, #404040h);
+    zRT(it(2), 316, y+2, 3, #000000h);
+  END;
+END;
+
+// ---------------- landing page ----------------
+
+// All 14 distributions in three boxes, one per menu page, each in its own
+// colour (blue, green, orange). The box of the current menu page is drawn
+// strong (saturated fill, double border, black text), the others pale; the
+// selected distribution sits on a darker bar inside its box.
+zDRAWL()
+BEGIN
+  LOCAL k, pg, x, y, t, on;
+  LOCAL bd := {#3A6FC4h, #2E9A52h, #D07A1Ch};
+  LOCAL fs := {#D6E3F8h, #D3EEDCh, #FBE3CAh};
+  LOCAL fp := {#F0F5FDh, #EFF8F2h, #FEF5EBh};
+  LOCAL br := {#A9C3EEh, #A6DDB8h, #F4C796h};
+  FOR pg FROM 1 TO 3 DO
+    x := 2 + 106*(pg-1);
+    IF pg == zPP THEN
+      RECT_P(G0, x, 41, x+103, 182, bd(pg), bd(pg));
+      RECT_P(G0, x+2, 43, x+101, 180, fs(pg), fs(pg));
+    ELSE
+      RECT_P(G0, x, 41, x+103, 182, br(pg), fp(pg));
+    END;
+  END;
+  FOR k FROM 1 TO 14 DO
+    pg := CEILING(k/6);
+    on := pg == zPP;
+    x := 2 + 106*(pg-1);
+    y := 45 + 22*((k-1) MOD 6);
+    IF k == PCd THEN
+      RECT_P(G0, x+3, y, x+100, y+20, IFTE(on, bd(pg), br(pg)), IFTE(on, bd(pg), br(pg)));
+    END;
+    t := zDN(k);
+    IF zTW(t, 2) > 94 THEN t := zSN(k); END;
+    TEXTOUT_P(t, G0, x+5, y+3, 2, IFTE(k == PCd AND on, #FFFFFFh, IFTE(on, #000000h, #808080h)));
+  END;
+  TEXTOUT_P("F1-F6 / Enter: open    Left/Right: page", G0, 4, 190, 1, #909090h);
+END;
+
+// ---------------- frame ----------------
+
+zMENU()
+BEGIN
+  LOCAL lb := {};
+  LOCAL k, c, it;
+  IF zV == 2 THEN
+    lb := {"Left", "Right", "Two", "Betw", "x=", "Back"};
+    lb(PCt) := "■" + lb(PCt);
+  ELSE
+    IF zM == 0 THEN
+      FOR k FROM 1 TO 6 DO
+        c := 6*(zPP-1) + k;
+        IF c <= 14 THEN
+          lb(k) := IFTE(c == PCd, "■", "") + zSN(c);
+        ELSE
+          lb(k) := "";
+        END;
+      END;
+    ELSE
+      FOR k FROM 1 TO 6 DO
+        it := zCP(6*(zPP-1) + k);
+        lb(k) := it(1);
+        IF it(2) == 2 AND zDS() THEN lb(k) := "pmf"; END;
+        IF it(2) == 9 THEN lb(k) := zTN(PCt); END;
+      END;
+    END;
+  END;
+  DRAWMENU(lb);
+END;
+
+// Action code of menu key m in the current view / menu.
+zCODE(m)
+BEGIN
+  LOCAL c, it;
+  LOCAL pc := {31, 32, 33, 34, 14, -1};
+  IF zV == 2 THEN RETURN pc(m); END;
+  IF zM == 0 THEN
+    c := 6*(zPP-1) + m;
+    IF c <= 14 THEN RETURN 200 + c; END;
+    RETURN 0;
+  END;
+  it := zCP(6*(zPP-1) + m);
+  RETURN it(2);
+END;
+
+zDRAW()
+BEGIN
+  LOCAL s;
+  // Rows 0-19 are the system title bar: never touched.
+  RECT_P(G0, 0, 20, 319, 219, #FFFFFFh, #FFFFFFh);
+  RECT_P(G0, 0, 20, 319, 37, #4F4F4Fh, #4F4F4Fh);
+  s := zDN(PCd);
+  IF zV == 2 THEN
+    s := s + " · Plot";
+  ELSE
+    IF zM == 0 THEN s := "Distributions"; END;
+    s := s + " · " + STRING(zPP, 1) + "/3";
+  END;
+  TEXTOUT_P(s, G0, 4, 23, 2, #FFFFFFh);
+  IF DIM(zMsg) > 0 THEN
+    zRT(zMsg, 315, 23, 2, #FF5050h);
+    zMsg := "";
+  ELSE
+    zRT(zTTL(), 315, 23, 2, #FFFFFFh);
+  END;
+  CASE
+    IF zV == 2 THEN zDRAWP(); END;
+    IF zM == 0 THEN zDRAWL(); END;
+    DEFAULT zDRAWC();
+  END;
+  // Entry line.
+  IF DIM(zCmd) > 0 THEN
+    RECT_P(G0, 0, 198, 319, 219, #FFFFFFh, #FFFFFFh);
+    LINE_P(G0, 0, 198, 319, 198, #C0C0C0h);
+    TEXTOUT_P(zCmd + "_", G0, 4, 201, 3, #0000C0h);
+  END;
+  zMENU();
+END;
+
+// ---------------- actions ----------------
+
+zADD(lb, v)
+BEGIN
+  zH := CONCAT({{lb, v}}, zH);
+  IF SIZE(zH) > 20 THEN zH := zH({1, 20}); END;
+END;
+
+// Value from the entry line: {1, v} used, {0, 0} empty, {-1, 0} bad.
+zGV()
+BEGIN
+  LOCAL v;
+  IF DIM(zCmd) == 0 THEN RETURN {0, 0}; END;
+  IFERR v := EXPR(zCmd); THEN zMsg := "Bad number"; RETURN {-1, 0}; END;
+  zCmd := "";
+  IF TYPE(v) <> 0 THEN zMsg := "Bad number"; RETURN {-1, 0}; END;
+  RETURN {1, v};
+END;
+
+// The entry line if there is one, else a dialog seeded with v0. {ok, v}.
+zARG(t, lb, hp, v0)
+BEGIN
+  LOCAL r, v;
+  r := zGV();
+  IF r(1) == 1 THEN RETURN r; END;
+  IF r(1) == -1 THEN RETURN {0, 0}; END;
+  v := v0;
+  IF INPUT({v}, t, {lb}, {hp}) THEN RETURN {1, v}; END;
+  RETURN {0, 0};
+END;
+
+// a and b for Between: "a ENTER b" (entry is b, a is x) or a dialog.
+zAB()
+BEGIN
+  LOCAL r, a, b;
+  r := zGV();
+  IF r(1) == -1 THEN RETURN 0; END;
+  IF r(1) == 1 THEN
+    PCy := r(2);
+    RETURN 1;
+  END;
+  a := PCx; b := PCy;
+  IF INPUT({a, b}, "P(a ≤ X ≤ b)", {"a =", "b ="}, {"Lower bound", "Upper bound"}) THEN
+    PCx := a; PCy := b;
+    RETURN 1;
+  END;
+  RETURN 0;
+END;
+
+zSET()
+BEGIN
+  LOCAL g := PCp(PCd);
+  LOCAL nm := zPNL(PCd);
+  LOCAL hp := zPHL(PCd);
+  LOCAL q1, q2, q3, ok, er, t;
+  IF SIZE(g) == 0 THEN zMsg := "No parameters"; RETURN; END;
+  q1 := g(1);
+  IF SIZE(g) >= 2 THEN q2 := g(2); END;
+  IF SIZE(g) >= 3 THEN q3 := g(3); END;
+  CASE
+    IF SIZE(g) == 1 THEN ok := INPUT({q1}, zDN(PCd), nm, hp); g := {q1}; END;
+    IF SIZE(g) == 2 THEN ok := INPUT({q1, q2}, zDN(PCd), nm, hp); g := {q1, q2}; END;
+    DEFAULT ok := INPUT({q1, q2, q3}, zDN(PCd), nm, hp); g := {q1, q2, q3};
+  END;
+  IF NOT ok THEN RETURN; END;
+  er := zCHK(g);
+  IF DIM(er) > 0 THEN zMsg := er; RETURN; END;
+  t := PCp;
+  t(PCd) := g;
+  PCp := t;
+  zADD("Set", zTTL());
+END;
+
+// A probability argument for the quantile keys: 0 < p < 1.
+zPRB(t)
+BEGIN
+  LOCAL r;
+  r := zARG(t, "p =", "Probability, 0 < p < 1", PCa);
+  IF r(1) == 1 AND (r(2) <= 0 OR r(2) >= 1) THEN zMsg := "Need 0 < p < 1"; RETURN {0, 0}; END;
+  RETURN r;
+END;
+
+zDO(a)
+BEGIN
+  LOCAL r, v, c, s;
+  IF a == 0 THEN RETURN; END;
+  IF a == -1 THEN zV := 1; zM := 0; zPP := CEILING(PCd/6); RETURN; END;
+  IF a > 200 THEN
+    PCd := a - 200; zM := 1; zPP := 1;
+    zDEFX();
+    RETURN;
+  END;
+  IF a >= 31 AND a <= 34 THEN
+    PCt := a - 30;
+    IF PCt == 4 AND PCy == PCx THEN PCy := zISF(0.25); END;
+    RETURN;
+  END;
+  CASE
+    IF a == 1 THEN zSET(); END;
+    IF a == 2 THEN
+      r := zARG(IFTE(zDS(), "pmf", "pdf"), "x =", "Value of X", PCx);
+      IF r(1) == 1 THEN
+        PCx := r(2);
+        zADD(IFTE(zDS(), "P(X=", "f(") + zN(PCx) + ")", zN(zPDF(PCx)));
+      END;
+    END;
+    IF a == 3 OR a == 4 THEN
+      r := zARG(IFTE(a == 3, "P(X ≤ x)", "P(X ≥ x)"), "x =", "Value of X", PCx);
+      IF r(1) == 1 THEN
+        PCx := r(2); PCt := a - 2;
+        zADD(IFTE(a == 3, "P(X≤", "P(X≥") + zN(PCx) + ")", zN(zPV()));
+      END;
+    END;
+    IF a == 5 THEN
+      IF zAB() THEN
+        PCt := 4;
+        zADD("P(" + zN(MIN(PCx,PCy)) + "≤X≤" + zN(MAX(PCx,PCy)) + ")", zN(zPV()));
+      END;
+    END;
+    IF a == 6 OR a == 7 THEN
+      r := zPRB(IFTE(a == 6, "x for P(X ≤ x) = p", "x for P(X ≥ x) = p"));
+      IF r(1) == 1 THEN
+        IF a == 6 THEN v := zICDF(r(2)); ELSE v := zISF(r(2)); END;
+        PCx := v; PCt := a - 5;
+        zADD(IFTE(a == 6, "◢⁻¹(", "◣⁻¹(") + zN(r(2)) + ")", zN(v));
+      END;
+    END;
+    IF a == 8 THEN
+      IF PCt == 4 THEN
+        zADD("P(" + zN(MIN(PCx,PCy)) + "≤X≤" + zN(MAX(PCx,PCy)) + ")", zN(zPV()));
+      ELSE
+        zADD("p " + zTN(PCt) + ", x=" + zN(PCx), zN(zPV()));
+      END;
+    END;
+    IF a == 9 THEN PCt := PCt MOD 4 + 1; zMsg := "Tail: " + zTN(PCt); END;
+    IF a == 10 THEN
+      r := zARG("Significance", "α =", "Significance level, 0 < α < 1", PCa);
+      IF r(1) == 1 THEN
+        IF r(2) <= 0 OR r(2) >= 1 THEN zMsg := "Need 0 < α < 1"; ELSE PCa := r(2); zADD("α", zN(PCa)); END;
+      END;
+    END;
+    IF a == 11 THEN
+      c := zCRIT();
+      IF SIZE(c) == 0 THEN zMsg := "Crit: Left, Right or Two"; RETURN; END;
+      s := "Crit " + zTN(PCt) + " " + zAT();
+      IF zDS() THEN
+        v := IFTE(c(1,2) < 0, "X≤", "X≥") + zN(c(1,1));
+        IF SIZE(c) == 2 THEN v := v + ", X≥" + zN(c(2,1)); END;
+      ELSE
+        v := zN(c(1,1));
+        IF SIZE(c) == 2 THEN v := v + ", " + zN(c(2,1)); END;
+      END;
+      PCx := c(SIZE(c), 1);
+      zADD(s, v);
+    END;
+    IF a == 12 THEN zV := 2; END;
+    IF a == 13 THEN zH := {}; END;
+    IF a == 14 THEN
+      IF PCt == 4 THEN
+        zAB();
+      ELSE
+        r := zARG("Statistic", "x =", "Value of X (test statistic)", PCx);
+        IF r(1) == 1 THEN PCx := r(2); END;
+      END;
+    END;
+  END;
+END;
+
+zHELP()
+BEGIN
+  LOCAL n := CHAR(10);
+  MSGBOX("Type a number, then a menu key" + n +
+         "pdf/pmf  ◢ P(X≤x)  ◣ P(X≥x)" + n +
+         "◢◣ P(a≤X≤b): a ENTER b ◢◣" + n +
+         "◢⁻¹ ◣⁻¹: x for a tail probability p" + n +
+         "p-val: p for the tail (Left/Right/Two)" + n +
+         "Crit: critical value(s) at α" + n +
+         "Plot: curve, p area red if p≤α, else blue" + n +
+         "Plot: Left/Right move x, Up/Down x10" + n +
+         "Calc: Left/Right page, Up/Down distribution" + n +
+         "Back / Esc / Symb / Menu: distribution list" + n +
+         "Home / Apps: leave the app");
+END;
+
+// Move x by n plot steps (one bar when discrete).
+zMOV(n)
+BEGIN
+  LOCAL r, st;
+  IF zDS() THEN st := 1; ELSE r := zRNG(); st := zNS(r(1), r(2))/10; END;
+  PCx := ROUND(ROUND(PCx/st, 0)*st + n*st, 10);
+END;
+
+zKEY(k)
+BEGIN
+  LOCAL i, np;
+  i := POS(zKD, k);
+  IF i > 0 THEN
+    IF DIM(zCmd) < 20 THEN zCmd := zCmd + STRING(i-1, 1); END;
+    RETURN;
+  END;
+  CASE
+    IF k == 48 THEN
+      IF NOT zHAS(zCmd, ".") AND NOT zHAS(zCmd, zEE()) THEN zCmd := zCmd + "."; END;
+    END;
+    IF k == 31 THEN
+      IF NOT zHAS(zCmd, zEE()) THEN
+        IF DIM(zCmd) == 0 OR zCmd == "-" THEN zCmd := zCmd + "1"; END;
+        zCmd := zCmd + zEE();
+      END;
+    END;
+    IF k == 27 THEN
+      CASE
+        IF DIM(zCmd) == 0 THEN zCmd := "-"; END;
+        IF RIGHT(zCmd, 1) == zEE() THEN zCmd := zCmd + "-"; END;
+        IF RIGHT(zCmd, 2) == zEE() + "-" THEN zCmd := LEFT(zCmd, DIM(zCmd)-1); END;
+        IF MID(zCmd, 1, 1) == "-" THEN zCmd := MID(zCmd, 2); END;
+        DEFAULT zCmd := "-" + zCmd;
+      END;
+    END;
+    IF k == 19 THEN
+      IF DIM(zCmd) > 0 THEN
+        zCmd := MID(zCmd, 1, DIM(zCmd)-1);
+      ELSE
+        IF SIZE(zH) > 1 THEN zH := zH({2, SIZE(zH)}); ELSE zH := {}; END;
+      END;
+    END;
+    IF k == 30 THEN
+      IF DIM(zCmd) == 0 AND zV == 1 AND zM == 0 THEN zDO(200 + PCd); RETURN; END;
+      IF DIM(zCmd) > 0 THEN
+        i := zGV();
+        IF i(1) == 1 THEN PCx := i(2); zADD("x", zN(PCx)); END;
+      END;
+    END;
+    IF k == 6  THEN zV := 2; END;
+    IF k == 11 THEN zV := 1; END;
+    IF k == 1 OR k == 13 THEN
+      zV := 1;
+      zDO(-1);
+    END;
+    IF k == 4 THEN
+      CASE
+        IF DIM(zCmd) > 0 THEN zCmd := ""; END;
+        IF zV == 2 THEN zV := 1; END;
+        IF zM == 1 THEN zDO(-1); END;
+      END;
+    END;
+    IF k == 7 OR k == 8 THEN
+      IF zV == 2 THEN
+        zMOV(IFTE(k == 7, -1, 1));
+      ELSE
+        np := 3;
+        IF k == 7 THEN zPP := IFTE(zPP > 1, zPP-1, np); ELSE zPP := IFTE(zPP < np, zPP+1, 1); END;
+        // Landing page: the selection jumps to the first row of the new column.
+        IF zM == 0 THEN PCd := 6*(zPP-1) + 1; zDEFX(); END;
+      END;
+    END;
+    IF k == 2 OR k == 12 THEN
+      IF zV == 2 THEN
+        zMOV(IFTE(k == 12, -10, 10));
+      ELSE
+        IF k == 2 THEN PCd := IFTE(PCd > 1, PCd-1, 14); ELSE PCd := IFTE(PCd < 14, PCd+1, 1); END;
+        IF zM == 0 THEN zPP := CEILING(PCd/6); END;
+        zDEFX();
+      END;
+    END;
+    IF k == 3 THEN zHELP(); END;
+    IF k == 5 THEN zEX := 1; END;
+    IF k == 0 THEN zEX := 2; END;
+  END;
+END;
+
+zTAP(mx, my)
+BEGIN
+  LOCAL m;
+  IF my < 220 THEN RETURN; END;
+  m := MIN(6, IP(mx/53) + 1);
+  zDO(zCODE(m));
+END;
+
+// Repair state left over from an older build or edited from Home.
+zFIX()
+BEGIN
+  IF TYPE(PCp) <> 6 OR SIZE(PCp) <> 14 THEN
+    PCp := {{0,1},{},{10},{5},{5,10},{0.2},{0,1},{10,0.5},{0.5},{0.2},{3,0.5},{3},{20,6,5},{20,6,3}};
+  END;
+  IF PCd < 1 OR PCd > 14 OR PCd <> IP(PCd) THEN PCd := 1; END;
+  IF PCt < 1 OR PCt > 4 OR PCt <> IP(PCt) THEN PCt := 3; END;
+  IF PCa <= 0 OR PCa >= 1 THEN PCa := 0.05; END;
+  IF zPP < 1 OR zPP > 3 THEN zPP := 1; END;
+END;
+
+zMAIN()
+BEGIN
+  LOCAL w, d;
+  zEX := 0; d := 1;
+  DIMGROB_P(G9, 640, 40);
+  zFIX();
+  WHILE zEX == 0 DO
+    IF d THEN
+      IFERR zDRAW(); THEN
+        zCmd := "";
+        RECT_P(G0, 0, 20, 319, 37, #4F4F4Fh, #4F4F4Fh);
+        TEXTOUT_P("Error while drawing", G0, 4, 23, 2, #FF3030h);
+        zMENU();
+      END;
+    END;
+    d := 0;
+    w := WAIT(-1);
+    IF TYPE(w) == 6 THEN
+      IF SIZE(w) >= 3 THEN
+        IF B→R(w(1)) == 3 THEN
+          IFERR zTAP(B→R(w(2)), B→R(w(3))); THEN zMsg := "Error on menu tap"; END;
+          d := 1;
+        END;
+      END;
+    ELSE
+      // A runtime error would end the app; report it in the strip instead.
+      IF w >= 0 THEN
+        IFERR zKEY(w); THEN zMsg := "Error on key " + STRING(w, 1); END;
+        d := 1;
+      END;
+    END;
+  END;
+  IF zEX == 2 THEN STARTVIEW(-4, 1); ELSE STARTVIEW(-1, 1); END;
+END;
+
+// ---------------- app views ----------------
+
+START()
+BEGIN
+  zV := 1; zM := 0; zPP := CEILING(PCd/6);
+  STARTVIEW(-1, 1);
+  zMAIN();
+END;
+
+Symb()
+BEGIN
+  zV := 1; zM := 0; zPP := CEILING(PCd/6);
+  zMAIN();
+END;
+
+Plot()
+BEGIN
+  zV := 2;
+  zMAIN();
+END;
+
+Num()
+BEGIN
+  zV := 1;
+  zMAIN();
+END;
