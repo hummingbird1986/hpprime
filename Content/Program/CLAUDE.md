@@ -253,26 +253,40 @@ Conversion.hpprgm`. The latter is not synced to the device, so it is latent, not
 `Content/Application/Base16C.hpappdir/` packages BaseN as a full-screen app. Readable source:
 `Content/Program/Base16C.txt`. Rebuild `Base16C.hpappprgm`
 from the `.txt` with the plain-variant writer above, plus a trailing `\0` (see below). The `.hpapp`
-is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB).
+is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB, stdlib zlib PNG writer, no PIL here):
+  BaseN's palette (#141C28 field, #5A6E8C border), green `BASE`, yellow `16C` in 5×7 glyphs at 2×3 px
+  (replaced the old `BASE`/`N` icon 2026-11-28). The `.hpappnote` is UTF-16LE + trailing `\0`, English.
 
 - **Why not `BaseN`:** app and program names share the `Name.var` namespace on the device, so an
   app called BaseN would clash with `BaseN.hpprgm`. `Base16C` was checked against the tree and the
   user guide (no hits); both can live on the calculator together.
 - **Self-contained.** It carries a private copy of BaseN's word engine (`Bt*` renamed to `BN*`) and
-  exports **no functions**, only the app variables `BNw BNb BNm BNs BNp BNz BNg BNc BNstk`.
+  exports **no functions**, only the app variables `BNw BNb BNm BNs BNp BNz BNg BNc BNo BNstk`.
   It does not need `BaseN.hpprgm` on the device, and its state is separate from BaseN's. Engine fixes
   in `BaseN.txt` must be ported by hand.
 - **The engine copy has no `MSGBOX`/`KILL` paths.** `KILL` would end the app. Errors go to `zMsg`,
   which shows once in red in the status strip. `zPR` replaces `zVR`: entry keys only produce
   digits valid in the current base, so there is nothing to reject.
 - **Screen:** rows 0-19 (system title bar and annunciators) are never drawn on. Strip y 20-37:
-  `Base 16 · <page>` left, `|Size: 64|2's C|T P G|` right (carry C in red, no popup, as the
-  HP-16C's annunciator). Panel BCD/HEX/DEC/OCT/BIN of X (no Tag prefix there), then the stack,
-  menu at 220. Menu pages and numeric action codes are in `zPG`. Top menu: Conf. Base Shift
-  Logic f.Conv Gray / ASCII. `Bin/Oct/Dec/Hex` **switch the working base** (marked `■`);
-  `W.SZE` (code 4) pops X as the word size, HP-16C WSIZE style. Conf. holds only Tag/Padding/
-  Grouping/Carry, sign mode and Negative. f.Conv (page 5) switches to hex on entry and restores
-  the previous base on exit (`zOB`, checked in `zMAIN` by page change).
+  `Base 16 · <page>` left, `|Size: 64|2's C G|T P Grp|` right (carry C in red, out-of-range
+  G in green, no popup, as the HP-16C's annunciators; `Grp` = grouping). Panel BCD/HEX/DEC/OCT/BIN of X (no Tag prefix there), then the stack,
+  menu at 220. Menu pages and numeric action codes are in `zPG`. Menu rearranged 2026-11-28:
+  top `Conf. W.SZE Shift▶ Logic▶ Bits▶ IEEE▶` / `Code▶ UNDO` (a trailing `▶` marks a folder,
+  CSTMenu's convention). **No base items on the menu — the user does not want them** (removed
+  2026-11-27; wrongly re-added and removed again 2026-11-28). Base switching is keys + touch only. Shift: SL SR RL RR ASR /
+  SLn SRn RLn RRn ASRn / RLC RRC RLCn RRCn LJ. Logic: AND OR XOR NOT / NAND NOR XNOR. Bits:
+  SB CB B? #B / MASKL MASKR. Code: ▶Gray Gray▶ ▶ASCII ASCII▶. RMD is on Shift ÷ only (not
+  HP-16C's position, where it is f 9; the user confirmed Shift ÷ on 2026-11-28). Base also
+  switches with **Shift + letter key B / O / D / H** (key codes 15 / 29 / 17 / 22, the `zAK`
+  letters; Shift + `,` is therefore OCT, plain `,` still swaps) and by **tapping a HEX/DEC/
+  OCT/BIN panel row** (codes 102/108/110/116 via `zTAP`). **Shift W** (key 39, also digit 6)
+  runs W.SZE (`zDO(4)`, 2026-11-28). `zDRAW` records
+  each base's rows in `zRY` as `{y top, y bottom, base}` every frame, so wrapped rows (64-bit BIN)
+  still hit; the working base's label is blue with a dot (`OCT •`; the user
+  rejected a highlight band). BCD is not tappable.
+  `W.SZE` (code 4) pops X as the word size, HP-16C WSIZE style. Conf. ("Base16C Setup") holds only
+  Tag/Padding/Grouping/Carry, sign mode, Overflow (G) and Negative. IEEE (page 5) switches to hex
+  on entry and restores the previous base on exit (`zOB`, checked in `zMAIN` by page change).
 - **Entry line:** digits of the current base; `.`/EEX make a real (only f▶32/f▶64 take it);
   ALPHA / Shift ALPHA type letters (`zAK` key codes) as text, which only ASCII▶ takes.
 - Entry follows Base48: `START()` → `STARTVIEW(-1,1)` and then the loop. `Num()` re-enters it.
@@ -287,6 +301,26 @@ is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB).
 - **At most 8 names per `LOCAL` statement.** 9 gave "Syntax error in program line N" pointing at the
   LOCAL line (seen twice: `zFD` line 340, `zSET` line 374). Split longer lists over two LOCAL lines.
   (The first time it was misdiagnosed as the names `e`/`bias`; they were renamed `ex`/`bs` anyway.)
+- **× ÷ RMD (added 2026-11-27, Base16C only — BaseN has no BMUL/BDIV).** Keys × (40) and ÷ (35),
+  Shift ÷ (codes 64/65/66, `zARI`; RMD left the menu 2026-11-28). Work on magnitudes from `zSM`:
+  `zMUL` multiplies in 16-bit limbs (partial sums < 10^12, exact in PPL reals) to a 128-bit
+  product; `zDV` is bitwise restoring division over `BNw` bits. HP-16C rules: × keeps the low
+  word, G = overflow (signed range in 1's/2's), C untouched; ÷ truncates toward 0, C = remainder
+  ≠ 0, G = 2's MIN/-1; RMD has Y's sign; X = 0 → "Divide by 0", stack untouched. Checked against Python big
+  ints (all modes, widths 8-64). First `FOR … DOWNTO` in the tree (`zDV`).
+- **C / G flags (2026-11-27, HP-16C flags 4 / 5).** `BNc` = carry/borrow (+ −, shifts, ÷
+  remainder); `BNo` = out of range: + − via `zOV` (UNS: same as C; 1's/2's: signed overflow),
+  × and ÷ in `zARI`, CHS of 2's MIN. RMD, logic, MASK, #B leave both alone. Not verified on device.
+- **UNDO (2026-11-27).** Shift Del and top menu page 2 `UNDO` (code 3). `zMAIN` snapshots
+  `{BNstk, BNc, BNo, BNw, BNm, BNb}` (`zSN`) before each event and, if the event changed it (`zSQ`),
+  keeps the snapshot in `zU`. `zUN` restores `zU`; the replaced state becomes the new `zU`, so
+  UNDO twice = redo. One level only. Entry line untouched. Shift Esc still clears the stack.
+- **SB / CB (2026-11-27).** Codes 56 / 57: Y with bit n (X, 0 to `BNw`-1) set / cleared via `zSB`;
+  X is consumed, no flags.
+- **RRCn / MASKL / MASKR / #B (2026-11-27).** Codes 37 / 53 / 54 / 55. Shift page 2 is
+  `SLn SRn RLn RRn` (same slots as their 1-bit forms on page 1), 3 is `RLC RRC RLCn RRCn LJ`; Logic page 2 is `NOR XNOR B? #B`, 3 is `MASKL MASKR SB CB`
+  (bit ops grouped by function, not by HP-16C key position). MASK takes n (0-`BNw`)
+  from X and replaces it (`zMR`); #B replaces X with its 1-bit count (`zNB`).
 - Stack entries are `{h, l}`, or `{h, l, text}` after 32▶f/64▶f/▶ASCII (shown as text; ops drop the tag).
 - **Append a `\0` (UTF-16 NUL) to the plain payload** (`(src + '\0').encode('utf-16-le')`, length
   field includes it). With it, the Kit's compiled copy ended exactly at the source (verified
@@ -327,17 +361,46 @@ only state: `PCd` (distribution 1-14, order in `zDN`), `PCp` (parameter list per
 - Landing page (`zM == 0`, where `START()` opens): F1-F6 are distribution names, 3 pages (6/6/2,
   Left/Right), no Back. Body `zDRAWL` lists all 14 in three boxes, one per page, coloured blue/green/orange; the
   current page's box is strong (double border), the others pale. Selected distribution: solid bar,
-  white text. Left/Right on the landing page also moves the selection to the new column's first row. F-key or Enter
-  opens a distribution. **Inside a distribution F6 is always Back** to the landing page (every calc
-  page and the Plot view); Esc, Symb and Menu go there too.
+  white text. Left/Right on the landing page also moves the selection to the new column's first row. F-key or Enter opens a distribution. Touch
+  (`zTAP`): tap a name in any box → select it (highlight, its box becomes the current page);
+  tap the selected name again → open (Enter too). **Inside a distribution F6 is Back** to the landing page on every calc
+  page; the Plot view has **no Back** (F6 blank, user asked 2026-11-27: mis-taps); Esc / Num return to Calc; Esc, Symb and Menu go there too.
 - Calc view: strip + parameter/E/Var lines + result tape + entry line; menu pages (Left/Right):
-  Set pdf ◢ ◣ ◢◣ Back / ◢⁻¹ ◣⁻¹ p-val Tail α= Back / Crit x= Plot Clear · Back. A typed number is
-  the argument; with no entry the key uses `PCx` (or opens a dialog). `◢◣` is `a ENTER b ◢◣`.
+  Set pdf P(X≤x) P(X≥x) P(a,b) Back / x-L x-R p-val Tail α Back / Crit CI Test · Clear Back (no x= on calc pages: typed number + ENTER sets x) (Plot only on the Plot key). A typed number is
+  the argument; with no entry the key uses the current value (`PCx`, `PCa`, a/b) — **no dialogs** for
+  single values (user asked 2026-11-27; `0.05 α` is the way to set α). Dialogs remain only for
+  multi-field input: Set, CI, Test, and the Plot a,b= key. `P(a,b)` is `a ENTER b P(a,b)`.
   Up/Down switch distribution and reset x to the critical value at α for the current tail.
-- Plot view (Plot key): pdf curve (bars if discrete), shaded tail: **red if p ≤ α, blue if not**
-  (Between always blue); α critical values as dashed purple lines. Menu Left/Right/Two/Betw/x=/Back (α= is on calc page 2);
+  **Tail changes only by the Tail key / Plot menu** (and P(a,b) → Betw, Test: Betw → Two). P(X≤x) P(X≥x) x-L x-R
+  leave it alone (changed 2026-11-27, so a Two-tailed test survives table lookups); ◢ ◣ compute
+  zCDF / zSF directly, not zPV. p-val takes a typed number as x (as b under Betw).
+  x-L / x-R (quantile from a left / right tail p) are labelled by `zQS()`: z (Std Normal), t, χ², F,
+  else x — also in the tape (`z-R(0.025)`).
+  With no typed p they take the **last probability on the tape** (`zLP`, set by `zADP` from
+  P(X≤x)/P(X≥x)/P(a,b)/p-val/Test p/α key), falling back to α; no dialog.
+  p-value tape rows (p-val key, Test) are labelled by `zPLB`: `p = P(X≤x)`, `p = P(X≥x)`, or for
+  Two `p = 2·P(X≥x)` / `2·P(X≤x)` (the smaller tail).
+  The red strip message (`zMsg`) is for errors only (bad input / parameters); the Tail key sets
+  no message — its label and the `<tail> · α` line already show the new tail.
+  Under Betw the calc view shows `a = <PCx>   b = <PCy>` top right instead of `x = …`.
+- Plot view (Plot key): pdf curve (bars if discrete), shaded tail: **red if p ≤ α (reject), green if not
+  (keep H0)**, Between always blue; α critical values as dashed purple lines. Menu Left/Right/Two/Betw/a,b=/(blank) (a,b= only under Betw: a dialog for both bounds; otherwise typed number + ENTER sets x) (α is on calc page 2);
   arrows move x (Up/Down ×10). Two-tailed: Crit uses α/2 per tail and the screen shows
   `α/2 = …` (`zAT`); p = 2·min(P(X≤x), P(X≥x)) is compared with α (same test); the far tail is shaded
   from the quantile holding the same probability, so for discrete distributions the shaded area
   can differ slightly from p.
+- CI (code 15, `zCI`, added 2026-11-27): two-sided 1-α interval, ignores the tail setting. Normal /
+  Std Normal → z-interval for μ (σ seeded from the Normal's σ), t → t-interval (df = n-1, not the t
+  parameter), Binomial / Bernoulli → proportion; on other distributions the key is blank and
+  inert (`zCIOK` in `zMENU`/`zCODE`). Dialog
+  seeded from the last inputs (`zCIm zCIs zCIn zCIp`, not exported); a typed number is the mean / p.
+  Adds two tape rows: `MoE z* = …` then `95% CI [lo, hi]`.
+- Test (code 16, `zTEST`, shown for Normal / Std Normal / t / χ² / F via `zKOK`): tests from
+  summary data. N/StdN: `CHOOSE` list 1-Z, 2-Z, 1-P, 2-P; t: 1-T, 2-T (pooled/Welch choose field
+  `{pl, {"Pooled","Welch"}}`), Paired; χ²: one-variance test straight away; F: two-variance test.
+  Each test sets `PCx` = statistic and calls `zTFIN`, which switches to the statistic's
+  distribution (z tests → Std Normal; t/χ²/F set df, Welch df fractional), Between → Two, and adds
+  4 tape rows: header (SE / sp / p / df), statistic, p for the tail, 1-α CI (μ, μA-μB, p, pA-pB,
+  μd, σ², σA²/σB²). 1-P / 2-P take counts x (statistic uses p0 / pooled p, CI unpooled).
+  Last inputs per test in `zTI` (index = test code 1-9). 2-T verified on the device 2026-11-27.
 - Unverified on the device as of 2026-11-27 (Kit was not running when it was written).

@@ -4,7 +4,7 @@
 // The functions of Probability.hpprgm (pdf/pmf, P(X<=x), P(X>=x), P(a<=X<=b),
 // lower/upper quantiles, E, Var) for 14 distributions, plus p-values,
 // critical values and a Plot view that shades the tail area: red when
-// p <= alpha (reject H0), blue when p > alpha. Left / Right / Two-tailed / Between.
+// p <= alpha (reject H0), green when p > alpha (keep H0). Left / Right / Two-tailed / Between.
 // Self-contained: does not need Probability.hpprgm. Exports only its state.
 
 // Distribution 1-14 (see zDN), parameters per distribution, statistic x,
@@ -16,7 +16,7 @@ EXPORT PCy:=1;
 EXPORT PCa:=0.05;
 EXPORT PCt:=3;
 
-zDN:={"Normal","Std Normal","Student t","Chi-square","F","Exponential","Uniform",
+zDN:={"Normal","Std Normal","Student t","χ²","F","Exponential","Uniform",
       "Binomial","Bernoulli","Geometric","Neg Binomial","Poisson","Hypergeometric","Neg Hypergeo"};
 zSN:={"Norm","StdN","t","χ²","F","Expo","Unif","Binom","Bern","Geo","NegB","Poiss","HypG","NHpG"};
 zSY:={"N","N","t","χ²","F","Exp","U","B","Bern","Geo","NB","Poi","HG","NHG"};
@@ -32,12 +32,12 @@ zPHL:={{"Mean μ","Standard deviation σ > 0"},{},
        {"Rate λ (mean)"},
        {"Population N","Successes in population K","Draws n"},
        {"Population N","Successes in population K","Stop at r-th success"}};
-zTN:={"Left","Right","Two","Betw"};
+zTN:={"Left","Right","Two","Betwn"};
 
 // Calc menu, three pages. Item = {label, code}; code -1 = back to the landing page.
-zCP:={{"Set",1},{"pdf",2},{"◢",3},{"◣",4},{"◢◣",5},{"Back",-1},
-      {"◢⁻¹",6},{"◣⁻¹",7},{"p-val",8},{"Tail",9},{"α=",10},{"Back",-1},
-      {"Crit",11},{"x=",14},{"Plot",12},{"Clear",13},{"",0},{"Back",-1}};
+zCP:={{"Set",1},{"pdf",2},{"P(X≤x)",3},{"P(X≥x)",4},{"P(a,b)",5},{"Back",-1},
+      {"x-L",6},{"x-R",7},{"p-val",8},{"Tail",9},{"α",10},{"Back",-1},
+      {"Crit",11},{"CI",15},{"Test",16},{"",0},{"Clear",13},{"Back",-1}};
 zKD:={47,42,43,44,37,38,39,32,33,34};
 
 // View 1 Calc, 2 Plot; menu mode 0 landing (distributions), 1 calc; menu page.
@@ -49,6 +49,16 @@ zMsg:="";
 zEX:=0;
 // Result tape, newest first: {label, value text}.
 zH:={};
+// Last probability on the tape (P, p-val, α): the quantile keys' default p.
+zLP:=-1;
+// Last CI inputs (seed the next CI dialog): mean, SD, n, proportion.
+zCIm:=0;
+zCIs:=1;
+zCIn:=30;
+zCIp:=0.5;
+// Last inputs of each test (index = test code in zTEST), seeding its dialog.
+zTI:={{0,1,30,0},{0,0,1,1,30,30,0},{0,30,0.5},{0,30,0,30},{0,1,30,0},
+      {0,0,1,1,10,10,0,1},{0,1,30,0},{1,30,1},{1,1,30,30}};
 
 // ---------------- helpers ----------------
 
@@ -111,6 +121,33 @@ END;
 zDS()
 BEGIN
   RETURN PCd >= 8;
+END;
+
+// Name of the variable for the quantile keys: z, t, χ², F, else x.
+zQS()
+BEGIN
+  CASE
+    IF PCd == 2 THEN RETURN "z"; END;
+    IF PCd == 3 THEN RETURN "t"; END;
+    IF PCd == 4 THEN RETURN "χ²"; END;
+    IF PCd == 5 THEN RETURN "F"; END;
+  END;
+  RETURN "x";
+END;
+
+// 1 if the CI key applies: Normal, Std Normal, t, Binomial, Bernoulli.
+zCIOK()
+BEGIN
+  RETURN PCd <= 3 OR PCd == 8 OR PCd == 9;
+END;
+
+// 1 if calc-menu code c is shown for the current distribution
+// (CI: see zCIOK; Test: Normal, Std Normal, t, χ², F).
+zKOK(c)
+BEGIN
+  IF c == 15 THEN RETURN zCIOK(); END;
+  IF c == 16 THEN RETURN PCd <= 5; END;
+  RETURN 1;
 END;
 
 // ---------------- distributions ----------------
@@ -558,7 +595,7 @@ BEGIN
   CASE
     IF PCt == 1 THEN RETURN "P(X≤" + zN(PCx) + ") = " + zN(pv); END;
     IF PCt == 2 THEN RETURN "P(X≥" + zN(PCx) + ") = " + zN(pv); END;
-    IF PCt == 3 THEN RETURN "Two-tailed p = " + zN(pv); END;
+    IF PCt == 3 THEN RETURN "Two-tailed area, p = " + zN(pv); END;
     DEFAULT RETURN "P(" + zN(MIN(PCx,PCy)) + "≤X≤" + zN(MAX(PCx,PCy)) + ") = " + zN(pv);
   END;
 END;
@@ -573,10 +610,13 @@ BEGIN
   r := zRNG(); u0 := r(1); u1 := r(2);
   tb := zTB();
   pv := zPV();
-  // Red when the test rejects H0 at alpha, blue otherwise (and for Between).
   sg := PCt <> 4 AND pv <= PCa;
-  fc := IFTE(sg, #F4A6A6h, #A9CCF2h);
-  lc := IFTE(sg, #C02020h, #1F5FB0h);
+  // Red: reject H0; green: keep H0; blue: Between (no test).
+  CASE
+    IF sg THEN fc := #F4A6A6h; lc := #C02020h; END;
+    IF PCt <> 4 THEN fc := #A8DDB0h; lc := #2E8B3Eh; END;
+    DEFAULT fc := #A9CCF2h; lc := #1F5FB0h;
+  END;
 
   // Headline, then x / alpha and the verdict.
   TEXTOUT_P(zPL(pv), G0, 4, 40, 3, lc);
@@ -671,16 +711,20 @@ BEGIN
   LOCAL mv, s, k, y, it;
   mv := zMV();
   TEXTOUT_P(zPLN(), G0, 4, 40, 2, #000000h);
-  zRT("x = " + zN(PCx), 316, 40, 2, #000000h);
+  IF PCt == 4 THEN
+    zRT("a = " + zN(PCx) + "   b = " + zN(PCy), 316, 40, 2, #000000h);
+  ELSE
+    zRT("x = " + zN(PCx), 316, 40, 2, #000000h);
+  END;
   s := "E(X) = " + zN(mv(1)) + "    Var(X) = " + zN(mv(2));
   IF TYPE(mv(2)) == 0 THEN s := s + "    SD = " + zN(SQRT(mv(2))); END;
   TEXTOUT_P(s, G0, 4, 59, 1, #505050h);
-  zRT(zTN(PCt) + " · " + zAT(), 316, 59, 1, #505050h);
+  zRT(IFTE(PCt == 4, "Between", zTN(PCt)) + " · " + zAT(), 316, 59, 1, #505050h);
   LINE_P(G0, 0, 74, 319, 74, #A0A0A0h);
   IF SIZE(zH) == 0 THEN
     TEXTOUT_P("Type x, then a menu key:", G0, 8, 90, 2, #909090h);
-    TEXTOUT_P("pdf  ◢ P(X≤x)  ◣ P(X≥x)  ◢◣ a ENTER b", G0, 8, 108, 2, #909090h);
-    TEXTOUT_P("◢⁻¹ ◣⁻¹ quantile of p   p-val   Crit", G0, 8, 126, 2, #909090h);
+    TEXTOUT_P("pdf  P(X≤x)  P(X≥x)  P(a,b): a ENTER b", G0, 8, 108, 2, #909090h);
+    TEXTOUT_P(zQS() + "-L " + zQS() + "-R: value from p   p-val   Crit", G0, 8, 126, 2, #909090h);
     TEXTOUT_P("Plot key: curve with the p area shaded", G0, 8, 144, 2, #909090h);
     TEXTOUT_P("Up/Down: distribution   Help: keys", G0, 8, 162, 2, #909090h);
   END;
@@ -728,7 +772,7 @@ BEGIN
     IF zTW(t, 2) > 94 THEN t := zSN(k); END;
     TEXTOUT_P(t, G0, x+5, y+3, 2, IFTE(k == PCd AND on, #FFFFFFh, IFTE(on, #000000h, #808080h)));
   END;
-  TEXTOUT_P("F1-F6 / Enter: open    Left/Right: page", G0, 4, 190, 1, #909090h);
+  TEXTOUT_P("Tap to select, tap again / Enter: open", G0, 4, 190, 1, #909090h);
 END;
 
 // ---------------- frame ----------------
@@ -738,7 +782,7 @@ BEGIN
   LOCAL lb := {};
   LOCAL k, c, it;
   IF zV == 2 THEN
-    lb := {"Left", "Right", "Two", "Betw", "x=", "Back"};
+    lb := {"Left", "Right", "Two", "Betwn", IFTE(PCt == 4, "a,b=", ""), ""};
     lb(PCt) := "■" + lb(PCt);
   ELSE
     IF zM == 0 THEN
@@ -756,6 +800,9 @@ BEGIN
         lb(k) := it(1);
         IF it(2) == 2 AND zDS() THEN lb(k) := "pmf"; END;
         IF it(2) == 9 THEN lb(k) := zTN(PCt); END;
+        IF it(2) == 6 THEN lb(k) := zQS() + "-L"; END;
+        IF it(2) == 7 THEN lb(k) := zQS() + "-R"; END;
+        IF NOT zKOK(it(2)) THEN lb(k) := ""; END;
       END;
     END;
   END;
@@ -766,14 +813,18 @@ END;
 zCODE(m)
 BEGIN
   LOCAL c, it;
-  LOCAL pc := {31, 32, 33, 34, 14, -1};
-  IF zV == 2 THEN RETURN pc(m); END;
+  LOCAL pc := {31, 32, 33, 34, 14, 0};
+  IF zV == 2 THEN
+    IF m == 5 AND PCt <> 4 THEN RETURN 0; END;
+    RETURN pc(m);
+  END;
   IF zM == 0 THEN
     c := 6*(zPP-1) + m;
     IF c <= 14 THEN RETURN 200 + c; END;
     RETURN 0;
   END;
   it := zCP(6*(zPP-1) + m);
+  IF NOT zKOK(it(2)) THEN RETURN 0; END;
   RETURN it(2);
 END;
 
@@ -819,6 +870,24 @@ BEGIN
   IF SIZE(zH) > 20 THEN zH := zH({1, 20}); END;
 END;
 
+// Tape label of the p-value for the current tail (not Between):
+// "p = P(X≤x)", "p = P(X≥x)", Two: "p = 2·P(X≤x)" or "p = 2·P(X≥x)", whichever tail is smaller.
+zPLB()
+BEGIN
+  LOCAL s := zN(PCx);
+  IF PCt == 1 THEN RETURN "p = P(X≤" + s + ")"; END;
+  IF PCt == 2 THEN RETURN "p = P(X≥" + s + ")"; END;
+  IF zCDF(PCx) < zSF(PCx) THEN RETURN "p = 2·P(X≤" + s + ")"; END;
+  RETURN "p = 2·P(X≥" + s + ")";
+END;
+
+// Add a probability result v to the tape and remember it for the quantile keys.
+zADP(lb, v)
+BEGIN
+  zLP := v;
+  zADD(lb, zN(v));
+END;
+
 // Value from the entry line: {1, v} used, {0, 0} empty, {-1, 0} bad.
 zGV()
 BEGIN
@@ -830,20 +899,19 @@ BEGIN
   RETURN {1, v};
 END;
 
-// The entry line if there is one, else a dialog seeded with v0. {ok, v}.
-zARG(t, lb, hp, v0)
+// The entry line if there is one, else the current value v0 (no dialog). {ok, v}.
+zARG(v0)
 BEGIN
-  LOCAL r, v;
+  LOCAL r;
   r := zGV();
   IF r(1) == 1 THEN RETURN r; END;
   IF r(1) == -1 THEN RETURN {0, 0}; END;
-  v := v0;
-  IF INPUT({v}, t, {lb}, {hp}) THEN RETURN {1, v}; END;
-  RETURN {0, 0};
+  RETURN {1, v0};
 END;
 
-// a and b for Between: "a ENTER b" (entry is b, a is x) or a dialog.
-zAB()
+// a and b for Between: "a ENTER b" (entry is b, a is x); with no entry the
+// current a, b, or (dl = 1, Plot a,b= key) a dialog for both.
+zAB(dl)
 BEGIN
   LOCAL r, a, b;
   r := zGV();
@@ -852,6 +920,7 @@ BEGIN
     PCy := r(2);
     RETURN 1;
   END;
+  IF NOT dl THEN RETURN 1; END;
   a := PCx; b := PCy;
   IF INPUT({a, b}, "P(a ≤ X ≤ b)", {"a =", "b ="}, {"Lower bound", "Upper bound"}) THEN
     PCx := a; PCy := b;
@@ -888,9 +957,296 @@ END;
 zPRB(t)
 BEGIN
   LOCAL r;
-  r := zARG(t, "p =", "Probability, 0 < p < 1", PCa);
-  IF r(1) == 1 AND (r(2) <= 0 OR r(2) >= 1) THEN zMsg := "Need 0 < p < 1"; RETURN {0, 0}; END;
+  r := zGV();
+  IF r(1) == -1 THEN RETURN {0, 0}; END;
+  IF r(1) == 0 THEN
+    RETURN {1, IFTE(zLP > 0 AND zLP < 1, zLP, PCa)};
+  END;
+  IF r(2) <= 0 OR r(2) >= 1 THEN zMsg := "Need 0 < p < 1"; RETURN {0, 0}; END;
   RETURN r;
+END;
+
+// Confidence interval at confidence 1-α (always two-sided, α/2 per side) and
+// its margin of error. Normal / Std Normal: z-interval for μ (σ known);
+// Student t: t-interval for μ (df = n-1); Binomial / Bernoulli: z-interval
+// for a proportion. A typed number is the mean (or proportion).
+zCI()
+BEGIN
+  LOCAL g, m, s, n, q, c, r, ok;
+  LOCAL me, cf, st, ct;
+  g := PCp(PCd);
+  cf := zN(100*(1-PCa)) + "%";
+  r := zGV();
+  IF r(1) == -1 THEN RETURN; END;
+  IF PCd <= 3 THEN
+    m := zCIm; s := zCIs; n := zCIn;
+    IF PCd == 1 THEN s := g(2); END;
+    IF r(1) == 1 THEN m := r(2); END;
+    IF PCd == 3 THEN
+      ok := INPUT({m, s, n}, cf + " CI for μ (t)", {"Mean =", "s =", "n ="},
+                  {"Sample mean", "Sample standard deviation s", "Sample size n ≥ 2"});
+    ELSE
+      ok := INPUT({m, s, n}, cf + " CI for μ (z)", {"Mean =", "σ =", "n ="},
+                  {"Sample mean", "Population standard deviation σ", "Sample size n"});
+    END;
+    IF NOT ok THEN RETURN; END;
+    IF s <= 0 THEN zMsg := "CI: need SD > 0"; RETURN; END;
+    IF n <> IP(n) OR n < IFTE(PCd == 3, 2, 1) THEN zMsg := "CI: need a whole n ≥ " + IFTE(PCd == 3, "2", "1"); RETURN; END;
+    zCIm := m; zCIs := s; zCIn := n;
+    IF PCd == 3 THEN
+      c := STUDENT_ICDF(n-1, 1-PCa/2); st := "t*(" + zN(n-1) + ")";
+    ELSE
+      c := NORMALD_ICDF(0, 1, 1-PCa/2); st := "z*";
+    END;
+    me := c*s/SQRT(n); ct := m;
+  ELSE
+    q := zCIp; n := zCIn;
+    IF r(1) == 1 THEN q := r(2); END;
+    ok := INPUT({q, n}, cf + " CI for p", {"p =", "n ="},
+                {"Sample proportion (x/n is fine)", "Sample size n"});
+    IF NOT ok THEN RETURN; END;
+    IF q < 0 OR q > 1 THEN zMsg := "CI: need 0 ≤ p ≤ 1"; RETURN; END;
+    IF n <> IP(n) OR n < 1 THEN zMsg := "CI: need a whole n ≥ 1"; RETURN; END;
+    zCIp := q; zCIn := n;
+    c := NORMALD_ICDF(0, 1, 1-PCa/2); st := "z*";
+    me := c*SQRT(q*(1-q)/n); ct := q;
+  END;
+  zADD("MoE  " + st + " = " + zN(c), zN(me));
+  zADD(cf + " CI", "[" + zN(ct-me) + ", " + zN(ct+me) + "]");
+END;
+
+// ---------------- tests from summary data ----------------
+
+// Remember the inputs v of test k.
+zSV(k, v)
+BEGIN
+  LOCAL w := zTI;
+  w(k) := v;
+  zTI := w;
+END;
+
+// Common end of every test: switch to distribution d with parameters g
+// (PCx already holds the statistic), Between becomes Two, then tape rows:
+// header hd / hv, the statistic sn, p for the tail, and the 1-α CI for cp.
+zTFIN(hd, hv, d, g, sn, lo, hi, cp)
+BEGIN
+  LOCAL w;
+  w := PCp; w(d) := g; PCp := w;
+  PCd := d;
+  IF PCt == 4 THEN PCt := 3; END;
+  zADD(hd, hv);
+  zADD(sn + " statistic", zN(PCx));
+  zADP(zPLB(), zPV());
+  zADD(zN(100*(1-PCa)) + "% CI " + cp, "[" + zN(lo) + ", " + zN(hi) + "]");
+END;
+
+// z* for a two-sided 1-α interval.
+zZS()
+BEGIN
+  RETURN NORMALD_ICDF(0, 1, 1-PCa/2);
+END;
+
+// 1-Z: one-sample z test for μ (σ known). r: typed value (the mean).
+zZ1(r)
+BEGIN
+  LOCAL v, m, s, n, u0, se, c;
+  v := zTI(1); m := v(1); s := v(2); n := v(3); u0 := v(4);
+  IF r(1) == 1 THEN m := r(2); END;
+  IF NOT INPUT({m, s, n, u0}, "One-sample z test", {"Mean =", "σ =", "n =", "μ0 ="},
+               {"Sample mean", "Population standard deviation σ", "Sample size n", "H0: μ = μ0"}) THEN RETURN; END;
+  IF s <= 0 THEN zMsg := "1-Z: need σ > 0"; RETURN; END;
+  IF n <> IP(n) OR n < 1 THEN zMsg := "1-Z: need a whole n ≥ 1"; RETURN; END;
+  zSV(1, {m, s, n, u0});
+  se := s/SQRT(n); c := zZS();
+  PCx := (m - u0)/se;
+  zTFIN("1-Z  SE = " + zN(se), "n " + zN(n), 2, {}, "z", m - c*se, m + c*se, "μ");
+END;
+
+// 2-Z: two-sample z test for μA - μB = Δ0 (σA, σB known).
+zZ2(r)
+BEGIN
+  LOCAL v, ma, mb, sa, sb, na, nb, d0;
+  LOCAL se, c, dd;
+  v := zTI(2);
+  ma := v(1); mb := v(2); sa := v(3); sb := v(4); na := v(5); nb := v(6); d0 := v(7);
+  IF r(1) == 1 THEN ma := r(2); END;
+  IF NOT INPUT({ma, mb, sa, sb, na, nb, d0}, "Two-sample z test",
+               {"Mean A =", "Mean B =", "σ A =", "σ B =", "n A =", "n B =", "Δ0 ="},
+               {"Sample mean of A", "Sample mean of B", "Population SD of A", "Population SD of B",
+                "Sample size of A", "Sample size of B", "H0: μA - μB = Δ0 (usually 0)"}) THEN RETURN; END;
+  IF sa <= 0 OR sb <= 0 THEN zMsg := "2-Z: need σ > 0"; RETURN; END;
+  IF na <> IP(na) OR nb <> IP(nb) OR na < 1 OR nb < 1 THEN zMsg := "2-Z: need whole n ≥ 1"; RETURN; END;
+  zSV(2, {ma, mb, sa, sb, na, nb, d0});
+  se := SQRT(sa^2/na + sb^2/nb); c := zZS(); dd := ma - mb;
+  PCx := (dd - d0)/se;
+  zTFIN("2-Z  SE = " + zN(se), "diff " + zN(dd), 2, {}, "z", dd - c*se, dd + c*se, "μA-μB");
+END;
+
+// 1-P: one-proportion z test for p = p0 from x successes in n.
+zP1(r)
+BEGIN
+  LOCAL v, x, n, p0, ph, se, c;
+  v := zTI(3); x := v(1); n := v(2); p0 := v(3);
+  IF r(1) == 1 THEN x := r(2); END;
+  IF NOT INPUT({x, n, p0}, "One-proportion z test", {"x =", "n =", "p0 ="},
+               {"Number of successes x", "Sample size n", "H0: p = p0"}) THEN RETURN; END;
+  IF n <> IP(n) OR n < 1 THEN zMsg := "1-P: need a whole n ≥ 1"; RETURN; END;
+  IF x < 0 OR x > n THEN zMsg := "1-P: need 0 ≤ x ≤ n"; RETURN; END;
+  IF p0 <= 0 OR p0 >= 1 THEN zMsg := "1-P: need 0 < p0 < 1"; RETURN; END;
+  zSV(3, {x, n, p0});
+  ph := x/n; c := zZS();
+  PCx := (ph - p0)/SQRT(p0*(1-p0)/n);
+  se := SQRT(ph*(1-ph)/n);
+  zTFIN("1-P  x/n = " + zN(ph), "n " + zN(n), 2, {}, "z", ph - c*se, ph + c*se, "p");
+END;
+
+// 2-P: two-proportion z test for pA = pB (pooled p in the statistic,
+// unpooled SE in the CI).
+zP2(r)
+BEGIN
+  LOCAL v, xa, na, xb, nb, pa, pb, pp;
+  LOCAL s0, se, c;
+  v := zTI(4); xa := v(1); na := v(2); xb := v(3); nb := v(4);
+  IF r(1) == 1 THEN xa := r(2); END;
+  IF NOT INPUT({xa, na, xb, nb}, "Two-proportion z test", {"x A =", "n A =", "x B =", "n B ="},
+               {"Successes in A", "Sample size of A", "Successes in B", "Sample size of B"}) THEN RETURN; END;
+  IF na <> IP(na) OR nb <> IP(nb) OR na < 1 OR nb < 1 THEN zMsg := "2-P: need whole n ≥ 1"; RETURN; END;
+  IF xa < 0 OR xa > na OR xb < 0 OR xb > nb THEN zMsg := "2-P: need 0 ≤ x ≤ n"; RETURN; END;
+  zSV(4, {xa, na, xb, nb});
+  pa := xa/na; pb := xb/nb; pp := (xa + xb)/(na + nb);
+  s0 := SQRT(pp*(1-pp)*(1/na + 1/nb));
+  IF s0 == 0 THEN zMsg := "2-P: pooled p is 0 or 1"; RETURN; END;
+  PCx := (pa - pb)/s0;
+  se := SQRT(pa*(1-pa)/na + pb*(1-pb)/nb); c := zZS();
+  zTFIN("2-P  pooled p = " + zN(pp), "diff " + zN(pa - pb), 2, {}, "z", pa - pb - c*se, pa - pb + c*se, "pA-pB");
+END;
+
+// 1-T (pd = 0) or paired t (pd = 1, on the differences): t test for μ = μ0.
+zT1(r, pd)
+BEGIN
+  LOCAL k, v, m, s, n, u0, se, c;
+  k := IFTE(pd, 7, 5);
+  v := zTI(k); m := v(1); s := v(2); n := v(3); u0 := v(4);
+  IF r(1) == 1 THEN m := r(2); END;
+  IF pd THEN
+    IF NOT INPUT({m, s, n, u0}, "Paired t test", {"Mean d =", "s d =", "n =", "μd0 ="},
+                 {"Mean of the differences d = A - B", "SD of the differences", "Number of pairs n ≥ 2",
+                  "H0: μd = μd0 (usually 0)"}) THEN RETURN; END;
+  ELSE
+    IF NOT INPUT({m, s, n, u0}, "One-sample t test", {"Mean =", "s =", "n =", "μ0 ="},
+                 {"Sample mean", "Sample standard deviation s", "Sample size n ≥ 2", "H0: μ = μ0"}) THEN RETURN; END;
+  END;
+  IF s <= 0 THEN zMsg := "t: need s > 0"; RETURN; END;
+  IF n <> IP(n) OR n < 2 THEN zMsg := "t: need a whole n ≥ 2"; RETURN; END;
+  zSV(k, {m, s, n, u0});
+  se := s/SQRT(n); c := STUDENT_ICDF(n-1, 1-PCa/2);
+  PCx := (m - u0)/se;
+  zTFIN(IFTE(pd, "Paired", "1-T") + "  SE = " + zN(se), "df " + zN(n-1), 3, {n-1}, "t",
+        m - c*se, m + c*se, IFTE(pd, "μd", "μ"));
+END;
+
+// 2-T: two-sample t test for μA - μB = Δ0, pooled or Welch.
+zT2(r)
+BEGIN
+  LOCAL v, ma, mb, sa, sb, na, nb, d0;
+  LOCAL pl, va, vb, se, df, sp, c, dd;
+  v := zTI(6);
+  ma := v(1); mb := v(2); sa := v(3); sb := v(4); na := v(5); nb := v(6); d0 := v(7); pl := v(8);
+  IF r(1) == 1 THEN ma := r(2); END;
+  IF NOT INPUT({ma, mb, sa, sb, na, nb, d0, {pl, {"Pooled", "Welch"}}}, "Two-sample t test",
+               {"Mean A =", "Mean B =", "s A =", "s B =", "n A =", "n B =", "Δ0 =", "Var:"},
+               {"Sample mean of A", "Sample mean of B", "Sample SD of A", "Sample SD of B",
+                "Sample size of A", "Sample size of B", "H0: μA - μB = Δ0 (usually 0)",
+                "Pooled: equal variances; Welch: unequal"}) THEN RETURN; END;
+  IF sa <= 0 OR sb <= 0 THEN zMsg := "2-T: need s > 0"; RETURN; END;
+  IF na <> IP(na) OR nb <> IP(nb) OR na < 2 OR nb < 2 THEN zMsg := "2-T: need whole n ≥ 2"; RETURN; END;
+  zSV(6, {ma, mb, sa, sb, na, nb, d0, pl});
+  IF pl == 1 THEN
+    sp := SQRT(((na-1)*sa^2 + (nb-1)*sb^2)/(na+nb-2));
+    se := sp*SQRT(1/na + 1/nb);
+    df := na + nb - 2;
+  ELSE
+    va := sa^2/na; vb := sb^2/nb;
+    se := SQRT(va + vb);
+    df := (va + vb)^2/(va^2/(na-1) + vb^2/(nb-1));
+  END;
+  dd := ma - mb;
+  PCx := (dd - d0)/se;
+  c := STUDENT_ICDF(df, 1-PCa/2);
+  zTFIN(IFTE(pl == 1, "Pooled  sp = " + zN(sp), "Welch"), "df " + zN(df), 3, {df}, "t",
+        dd - c*se, dd + c*se, "μA-μB");
+END;
+
+// χ²-σ: chi-square test for one variance, σ = σ0; CI for σ².
+zCV(r)
+BEGIN
+  LOCAL v, s, n, s0, df, q;
+  v := zTI(8); s := v(1); n := v(2); s0 := v(3);
+  IF r(1) == 1 THEN s := r(2); END;
+  IF NOT INPUT({s, n, s0}, "χ² test for σ", {"s =", "n =", "σ0 ="},
+               {"Sample standard deviation s", "Sample size n ≥ 2", "H0: σ = σ0"}) THEN RETURN; END;
+  IF s <= 0 OR s0 <= 0 THEN zMsg := "χ²: need s, σ0 > 0"; RETURN; END;
+  IF n <> IP(n) OR n < 2 THEN zMsg := "χ²: need a whole n ≥ 2"; RETURN; END;
+  zSV(8, {s, n, s0});
+  df := n - 1; q := df*s^2;
+  PCx := q/s0^2;
+  zTFIN("χ² var  s² = " + zN(s^2), "df " + zN(df), 4, {df}, "χ²",
+        q/CHISQUARE_ICDF(df, 1-PCa/2), q/CHISQUARE_ICDF(df, PCa/2), "σ²");
+END;
+
+// 2-Var F: F test for σA² = σB²; CI for σA²/σB².
+zFV(r)
+BEGIN
+  LOCAL v, sa, sb, na, nb, d1, d2, f;
+  v := zTI(9); sa := v(1); sb := v(2); na := v(3); nb := v(4);
+  IF r(1) == 1 THEN sa := r(2); END;
+  IF NOT INPUT({sa, sb, na, nb}, "Two-variance F test", {"s A =", "s B =", "n A =", "n B ="},
+               {"Sample SD of A (numerator)", "Sample SD of B", "Sample size of A", "Sample size of B"}) THEN RETURN; END;
+  IF sa <= 0 OR sb <= 0 THEN zMsg := "F: need s > 0"; RETURN; END;
+  IF na <> IP(na) OR nb <> IP(nb) OR na < 2 OR nb < 2 THEN zMsg := "F: need whole n ≥ 2"; RETURN; END;
+  zSV(9, {sa, sb, na, nb});
+  d1 := na - 1; d2 := nb - 1; f := sa^2/sb^2;
+  PCx := f;
+  zTFIN("2-Var F", "df " + zN(d1) + ", " + zN(d2), 5, {d1, d2}, "F",
+        f/FISHER_ICDF(d1, d2, 1-PCa/2), f/FISHER_ICDF(d1, d2, PCa/2), "σA²/σB²");
+END;
+
+// Test key: pick a test for the current distribution (list if several),
+// then run it. A typed number seeds the dialog's first field.
+zTEST()
+BEGIN
+  LOCAL r, nm, cd, ch;
+  r := zGV();
+  IF r(1) == -1 THEN RETURN; END;
+  CASE
+    IF PCd <= 2 THEN
+      nm := {"1-Z  one mean (σ known)", "2-Z  two means (σ known)",
+             "1-P  one proportion", "2-P  two proportions"};
+      cd := {1, 2, 3, 4};
+    END;
+    IF PCd == 3 THEN
+      nm := {"1-T  one mean", "2-T  two means (pooled / Welch)", "Paired t"};
+      cd := {5, 6, 7};
+    END;
+    IF PCd == 4 THEN nm := {}; cd := {8}; END;
+    IF PCd == 5 THEN nm := {}; cd := {9}; END;
+    DEFAULT RETURN;
+  END;
+  ch := 1;
+  IF SIZE(cd) > 1 THEN
+    IF NOT CHOOSE(ch, "Test", nm) THEN RETURN; END;
+  END;
+  CASE
+    IF cd(ch) == 1 THEN zZ1(r); END;
+    IF cd(ch) == 2 THEN zZ2(r); END;
+    IF cd(ch) == 3 THEN zP1(r); END;
+    IF cd(ch) == 4 THEN zP2(r); END;
+    IF cd(ch) == 5 THEN zT1(r, 0); END;
+    IF cd(ch) == 6 THEN zT2(r); END;
+    IF cd(ch) == 7 THEN zT1(r, 1); END;
+    IF cd(ch) == 8 THEN zCV(r); END;
+    IF cd(ch) == 9 THEN zFV(r); END;
+  END;
 END;
 
 zDO(a)
@@ -911,45 +1267,50 @@ BEGIN
   CASE
     IF a == 1 THEN zSET(); END;
     IF a == 2 THEN
-      r := zARG(IFTE(zDS(), "pmf", "pdf"), "x =", "Value of X", PCx);
+      r := zARG(PCx);
       IF r(1) == 1 THEN
         PCx := r(2);
         zADD(IFTE(zDS(), "P(X=", "f(") + zN(PCx) + ")", zN(zPDF(PCx)));
       END;
     END;
     IF a == 3 OR a == 4 THEN
-      r := zARG(IFTE(a == 3, "P(X ≤ x)", "P(X ≥ x)"), "x =", "Value of X", PCx);
+      r := zARG(PCx);
       IF r(1) == 1 THEN
-        PCx := r(2); PCt := a - 2;
-        zADD(IFTE(a == 3, "P(X≤", "P(X≥") + zN(PCx) + ")", zN(zPV()));
+        PCx := r(2);
+        zADP(IFTE(a == 3, "P(X≤", "P(X≥") + zN(PCx) + ")", IFTE(a == 3, zCDF(PCx), zSF(PCx)));
       END;
     END;
     IF a == 5 THEN
-      IF zAB() THEN
+      IF zAB(0) THEN
         PCt := 4;
-        zADD("P(" + zN(MIN(PCx,PCy)) + "≤X≤" + zN(MAX(PCx,PCy)) + ")", zN(zPV()));
+        zADP("P(" + zN(MIN(PCx,PCy)) + "≤X≤" + zN(MAX(PCx,PCy)) + ")", zPV());
       END;
     END;
     IF a == 6 OR a == 7 THEN
       r := zPRB(IFTE(a == 6, "x for P(X ≤ x) = p", "x for P(X ≥ x) = p"));
       IF r(1) == 1 THEN
         IF a == 6 THEN v := zICDF(r(2)); ELSE v := zISF(r(2)); END;
-        PCx := v; PCt := a - 5;
-        zADD(IFTE(a == 6, "◢⁻¹(", "◣⁻¹(") + zN(r(2)) + ")", zN(v));
+        PCx := v;
+        zADD(zQS() + IFTE(a == 6, "-L(", "-R(") + zN(r(2)) + ")", zN(v));
       END;
     END;
     IF a == 8 THEN
+      r := zGV();
+      IF r(1) == -1 THEN RETURN; END;
+      IF r(1) == 1 THEN
+        IF PCt == 4 THEN PCy := r(2); ELSE PCx := r(2); END;
+      END;
       IF PCt == 4 THEN
-        zADD("P(" + zN(MIN(PCx,PCy)) + "≤X≤" + zN(MAX(PCx,PCy)) + ")", zN(zPV()));
+        zADP("P(" + zN(MIN(PCx,PCy)) + "≤X≤" + zN(MAX(PCx,PCy)) + ")", zPV());
       ELSE
-        zADD("p " + zTN(PCt) + ", x=" + zN(PCx), zN(zPV()));
+        zADP(zPLB(), zPV());
       END;
     END;
-    IF a == 9 THEN PCt := PCt MOD 4 + 1; zMsg := "Tail: " + zTN(PCt); END;
+    IF a == 9 THEN PCt := PCt MOD 4 + 1; END;
     IF a == 10 THEN
-      r := zARG("Significance", "α =", "Significance level, 0 < α < 1", PCa);
+      r := zARG(PCa);
       IF r(1) == 1 THEN
-        IF r(2) <= 0 OR r(2) >= 1 THEN zMsg := "Need 0 < α < 1"; ELSE PCa := r(2); zADD("α", zN(PCa)); END;
+        IF r(2) <= 0 OR r(2) >= 1 THEN zMsg := "Need 0 < α < 1"; ELSE PCa := r(2); zADP("α", PCa); END;
       END;
     END;
     IF a == 11 THEN
@@ -968,12 +1329,11 @@ BEGIN
     END;
     IF a == 12 THEN zV := 2; END;
     IF a == 13 THEN zH := {}; END;
+    IF a == 15 THEN zCI(); END;
+    IF a == 16 THEN zTEST(); END;
     IF a == 14 THEN
       IF PCt == 4 THEN
-        zAB();
-      ELSE
-        r := zARG("Statistic", "x =", "Value of X (test statistic)", PCx);
-        IF r(1) == 1 THEN PCx := r(2); END;
+        zAB(1);
       END;
     END;
   END;
@@ -983,11 +1343,14 @@ zHELP()
 BEGIN
   LOCAL n := CHAR(10);
   MSGBOX("Type a number, then a menu key" + n +
-         "pdf/pmf  ◢ P(X≤x)  ◣ P(X≥x)" + n +
-         "◢◣ P(a≤X≤b): a ENTER b ◢◣" + n +
-         "◢⁻¹ ◣⁻¹: x for a tail probability p" + n +
-         "p-val: p for the tail (Left/Right/Two)" + n +
+         "pdf/pmf   P(X≤x)   P(X≥x)" + n +
+         "P(a,b) = P(a≤X≤b): a ENTER b P(a,b)" + n +
+         "x-L / x-R (z, t, χ², F): value with" + n +
+         "  P(X≤value) = p / P(X≥value) = p" + n +
+         "p-val: p for the Tail setting (only Tail changes it)" + n +
          "Crit: critical value(s) at α" + n +
+         "CI: 1-α interval + margin of error" + n +
+         "Test (N, t, χ², F): test from summary data" + n +
          "Plot: curve, p area red if p≤α, else blue" + n +
          "Plot: Left/Right move x, Up/Down x10" + n +
          "Calc: Left/Right page, Up/Down distribution" + n +
@@ -1084,7 +1447,19 @@ END;
 
 zTAP(mx, my)
 BEGIN
-  LOCAL m;
+  LOCAL m, pg, rw;
+  // Landing page (boxes from zDRAWL): a tap on a name in any box selects it
+  // (highlight, and its box becomes the current page); a tap on the name
+  // already selected opens it (Enter does too).
+  IF zV == 1 AND zM == 0 AND my >= 41 AND my <= 182 AND mx >= 2 AND mx < 316 THEN
+    pg := MIN(3, IP((mx-2)/106) + 1);
+    IF my < 45 OR my >= 177 THEN RETURN; END;
+    rw := IP((my-45)/22) + 1;
+    m := 6*(pg-1) + rw;
+    IF rw > 6 OR m > 14 THEN RETURN; END;
+    IF m == PCd AND pg == zPP THEN zDO(200 + m); ELSE PCd := m; zPP := pg; END;
+    RETURN;
+  END;
   IF my < 220 THEN RETURN; END;
   m := MIN(6, IP(mx/53) + 1);
   zDO(zCODE(m));

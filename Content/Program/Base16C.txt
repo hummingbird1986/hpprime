@@ -13,10 +13,12 @@ EXPORT BNp:=0;
 EXPORT BNz:=0;
 EXPORT BNg:=1;
 EXPORT BNc:=0;
+// Out-of-range flag G (HP-16C flag 5).
+EXPORT BNo:=0;
 EXPORT BNstk:={};
 
 zCmd:="";
-// Base in use before entering f.Conv (page 5), restored on leaving it.
+// Base in use before entering IEEE (page 5), restored on leaving it.
 zOB:=16;
 // Letter entry: zAL 0 off, 1 ALPHA (upper), 2 alpha (lower); zTX 1 while the
 // entry line holds text (letters typed), which only ASCII▶ accepts.
@@ -31,25 +33,34 @@ zEX:=0;
 zPI:=1;
 zPP:=1;
 zKD:={47,42,43,44,37,38,39,32,33,34,14,15,16,17,18,20};
+// Panel rows as drawn last: {y top, y bottom, base}, one per HEX/DEC/OCT/BIN.
+// Tapping inside a range switches to that base (zTAP).
+zRY:={};
+// Undo point: {stack, C, G, word size, sign mode, base} before the last
+// change; {} when there is none. See zSN / zSQ / zUN and zMAIN.
+zU:={};
 
-// Menu pages, laid out as CSTMenu's Base pages. Item = {label, code}.
-// code < 0: go to page -code. 1 Conf, 2 Enter (Enter key only), 4 W.SZE (word size from X),
-// 102/108/110/116 base, 21-27 shift op (x), 31-37 shift op n times (y, n),
+// Menu pages. Item = {label, code}. A label ending in ▶ opens a folder (as in CSTMenu).
+// No base items (removed 2026-11-27): Shift B/O/D/H or a panel tap. RMD is on Shift ÷ only.
+// code < 0: go to page -code. 1 Conf, 2 Enter (Enter key only), 3 UNDO, 4 W.SZE (word size from X),
+// 102/108/110/116 base (Shift B/O/D/H, or tapping a panel row; no menu item), 21-27 shift op (x), 31-37 shift op n times (y, n),
+// 61/62 + -, 63 negate, 64/65/66 × ÷ RMD,
 // 41-43 AND/OR/XOR, 44 NOT, 45-47 NAND/NOR/XNOR, 51 LJ, 52 B?,
+// 53/54 MASKL/MASKR (n in X), 55 #B (count of 1 bits), 56/57 SB/CB (set/clear bit n of Y),
 // 71/72 IEEE-754 single/double encode, 73/74 decode X, 81/82 binary<->Gray,
 // 83 show X as ASCII text, 84 text -> word.
 zPG:={
- {"", {{"Conf.",1},{"Base",-2},{"Shift",-3},{"Logic",-4},{"f.Conv",-5},{"Gray",-6},
-       {"ASCII",-7},{"",0},{"",0},{"",0},{"",0},{"",0}}},
- {"", {{"Bin",102},{"Oct",108},{"Dec",110},{"Hex",116},{"W.SZE",4},{"Back",-1}}},
+ {"", {{"Conf.",1},{"W.SZE",4},{"Shift▶",-2},{"Logic▶",-3},{"Bits▶",-4},{"IEEE▶",-5},
+       {"Code▶",-6},{"UNDO",3},{"",0},{"",0},{"",0},{"",0}}},
  {"Shift", {{"SL",21},{"SR",22},{"RL",24},{"RR",25},{"ASR",23},{"Back",-1},
-                 {"RLC",26},{"RRC",27},{"LJ",51},{"B?",52},{"",0},{"Back",-1},
-                 {"SLn",31},{"SRn",32},{"RLn",34},{"RRn",35},{"RLCn",36},{"Back",-1}}},
- {"Logic", {{"AND",41},{"OR",42},{"XOR",43},{"NOT",44},{"NAND",45},{"Back",-1},
-                 {"NOR",46},{"XNOR",47},{"",0},{"",0},{"",0},{"Back",-1}}},
+                 {"SLn",31},{"SRn",32},{"RLn",34},{"RRn",35},{"ASRn",33},{"Back",-1},
+                 {"RLC",26},{"RRC",27},{"RLCn",36},{"RRCn",37},{"LJ",51},{"Back",-1}}},
+ {"Logic", {{"AND",41},{"OR",42},{"XOR",43},{"NOT",44},{"",0},{"Back",-1},
+                 {"NAND",45},{"NOR",46},{"XNOR",47},{"",0},{"",0},{"Back",-1}}},
+ {"Bits", {{"SB",56},{"CB",57},{"B?",52},{"#B",55},{"",0},{"Back",-1},
+                 {"MASKL",53},{"MASKR",54},{"",0},{"",0},{"",0},{"Back",-1}}},
  {"IEEE 754", {{"f▶32",71},{"f▶64",72},{"",0},{"32▶f",73},{"64▶f",74},{"Back",-1}}},
- {"Gray", {{"▶Gray",81},{"Gray▶",82},{"",0},{"",0},{"",0},{"Back",-1}}},
- {"ASCII", {{"▶ASCII",83},{"ASCII▶",84},{"",0},{"",0},{"",0},{"Back",-1}}}
+ {"Code", {{"▶Gray",81},{"Gray▶",82},{"▶ASCII",83},{"ASCII▶",84},{"",0},{"Back",-1}}}
 };
 
 // ---------------- word engine (copy of BaseN.hpprgm, Bt* -> BN*) ----------------
@@ -297,6 +308,133 @@ BEGIN
   RETURN w;
 END;
 
+// n ones right-justified in the word (0 <= n <= BNw).
+zMR(n)
+BEGIN
+  IF n >= 32 THEN RETURN {2^(n-32)-1, 4294967295}; END;
+  RETURN {0, 2^n-1};
+END;
+
+// Number of 1 bits in v.
+zNB(v)
+BEGIN
+  LOCAL x, j, c;
+  c := 0;
+  FOR j FROM 1 TO 2 DO
+    x := v(j);
+    WHILE x > 0 DO c := c + (x MOD 2); x := IP(x/2); END;
+  END;
+  RETURN c;
+END;
+
+// G after Y + X = r (sb = 0) or Y - X = r (sb = 1), HP-16C flag 5.
+// Unsigned: G = carry / borrow. 1's / 2's: the signed result does not fit.
+zOV(y, x, r, sb)
+BEGIN
+  LOCAL a, b, c;
+  IF BNm == 0 THEN RETURN BNc; END;
+  a := zGB(y, BNw-1); b := zGB(x, BNw-1); c := zGB(r, BNw-1);
+  IF sb THEN b := 1 - b; END;
+  RETURN a == b AND c <> a;
+END;
+
+// ---------------- multiply / divide (HP-16C rules) ----------------
+
+// 1 if pair a < pair b (raw values, any size).
+zLT(a, b)
+BEGIN
+  RETURN a(1) < b(1) OR (a(1) == b(1) AND a(2) < b(2));
+END;
+
+// a - b for raw pairs with a >= b (no masking, no carry flag).
+zSUBR(a, b)
+BEGIN
+  LOCAL h, l;
+  l := a(2) - b(2); h := a(1) - b(1);
+  IF l < 0 THEN l := l + 4294967296; h := h - 1; END;
+  RETURN {h, l};
+END;
+
+// A word as four 16-bit limbs, lowest first.
+zLB(v)
+BEGIN
+  RETURN {v(2) MOD 65536, IP(v(2)/65536), v(1) MOD 65536, IP(v(1)/65536)};
+END;
+
+// Full 128-bit product of two 64-bit magnitudes: {high pair, low pair}.
+// 16-bit limbs keep every partial sum below 10^12 (exact in PPL reals).
+zMUL(a, b)
+BEGIN
+  LOCAL x, y, p, j, k, c;
+  x := zLB(a); y := zLB(b); p := {0,0,0,0,0,0,0,0};
+  FOR j FROM 1 TO 4 DO
+    FOR k FROM 1 TO 4 DO p(j+k-1) := p(j+k-1) + x(j)*y(k); END;
+  END;
+  c := 0;
+  FOR j FROM 1 TO 8 DO
+    c := p(j) + c; p(j) := c MOD 65536; c := IP(c/65536);
+  END;
+  RETURN {{p(7) + p(8)*65536, p(5) + p(6)*65536}, {p(3) + p(4)*65536, p(1) + p(2)*65536}};
+END;
+
+// Unsigned a / b over the word size (b <> 0): {quotient, remainder}.
+// Restoring long division, one bit per step.
+zDV(a, b)
+BEGIN
+  LOCAL q, r, k, h, l;
+  q := {0, 0}; r := {0, 0};
+  FOR k FROM BNw-1 DOWNTO 0 DO
+    l := r(2)*2 + zGB(a, k); h := r(1)*2;
+    IF l >= 4294967296 THEN l := l - 4294967296; h := h + 1; END;
+    r := {h, l};
+    IF NOT zLT(r, b) THEN r := zSUBR(r, b); q := zSB(q, k, 1); END;
+  END;
+  RETURN {q, r};
+END;
+
+// Y op X for op 1 ×, 2 ÷, 3 RMD in the current sign mode, on magnitudes.
+// Flags follow the HP-16C: C carry (flag 4), G out of range (flag 5).
+// ×: low word of the product; G = 1 if it does not fit; C untouched.
+// ÷: quotient truncated toward 0; C = 1 if the remainder is not 0,
+//    G = 1 on overflow (2's: most negative / -1).
+// RMD: remainder, with the sign of Y; no flags. Returns {} on division by 0.
+zARI(y, x, op)
+BEGIN
+  LOCAL sy, sx, my, mx, ng, q, r, lm;
+  LOCAL hi, lo, ov;
+  sy := zSM(y); sx := zSM(x); my := sy(2); mx := sx(2);
+  ng := (sy(1) <> sx(1));
+  IF op == 1 THEN
+    q := zMUL(my, mx); hi := q(1); lo := q(2);
+    IF BNm == 0 THEN
+      lm := zMSK();
+    ELSE
+      lm := zSB({0, 0}, BNw-1, 1);
+      IF NOT (ng AND BNm == 2) THEN lm := zSUBR(lm, {0, 1}); END;
+    END;
+    ov := hi(1) <> 0 OR hi(2) <> 0 OR zLT(lm, lo);
+    r := zMK(lo(1), lo(2));
+    IF ng AND (r(1) <> 0 OR r(2) <> 0) THEN r := zNEG(r); END;
+    BNo := ov;
+    RETURN r;
+  END;
+  IF mx(1) == 0 AND mx(2) == 0 THEN RETURN {}; END;
+  q := zDV(my, mx);
+  IF op == 2 THEN
+    r := q(1);
+    ov := 0;
+    IF BNm == 2 AND NOT ng AND zGB(r, BNw-1) == 1 THEN ov := 1; END;
+    IF ng AND (r(1) <> 0 OR r(2) <> 0) THEN r := zNEG(r); END;
+    lo := q(2);
+    BNc := lo(1) <> 0 OR lo(2) <> 0;
+    BNo := ov;
+    RETURN r;
+  END;
+  r := q(2);
+  IF sy(1) AND (r(1) <> 0 OR r(2) <> 0) THEN r := zNEG(r); END;
+  RETURN r;
+END;
+
 // ---------------- Gray code and BCD ----------------
 
 // Logical shift right by one bit; leaves the carry alone.
@@ -478,31 +616,33 @@ END;
 zSET()
 BEGIN
   LOCAL s, p, z, g, cy;
-  LOCAL m, mU, m1, m2;
-  s := BNs; p := BNp; z := BNz; g := BNg; cy := BNc;
+  LOCAL m, mU, m1, m2, ov;
+  s := BNs; p := BNp; z := BNz; g := BNg; cy := BNc; ov := BNo;
   IF s < 1 OR s > 3 THEN s := 1; END;
   IF p <> 1 THEN p := 0; END;
   IF z <> 1 THEN z := 0; END;
   IF g <> 1 THEN g := 0; END;
   IF cy <> 1 THEN cy := 0; END;
+  IF ov <> 1 THEN ov := 0; END;
   m := BNm;
   IF m < 0 OR m > 2 THEN m := 2; END;
   mU := (m == 0); m1 := (m == 1); m2 := (m == 2);
-  // Left column: Tag, Padding, Grouping, Carry. Right column: sign mode.
+  // Left column: Tag, Padding, Grouping, Carry. Right column: sign mode, G.
   IF INPUT({{p, 1, {30, 8, 0}}, {z, 1, {30, 8, 1}},
             {g, 1, {30, 8, 2}}, {cy, 1, {30, 8, 3}},
             {mU, 3, {84, 8, 0}}, {m1, 1, {84, 8, 1}},
-            {m2, 1, {84, 8, 2}},
+            {m2, 1, {84, 8, 2}}, {ov, 1, {84, 8, 3}},
             {s, {"Base 10 only", "All bases", "Bit pattern"}, {30, 62, 4}}},
-           "BaseN Setup",
+           "Base16C Setup",
            {"Tag", "Padding", "Grouping", "Carry",
-            "Unsigned", "1's compl", "2's compl",
+            "Unsigned", "1's compl", "2's compl", "Overflow",
             "Negative"},
            {"Prefix 0b / 0o / 0x, e.g. 0xFF",
             "Pad to the word size with leading zeros",
             "Space digits out: 00 00 00 15, 0000 0101",
             "Carry flag; RLC and RRC rotate through it",
             "Unsigned", "1's complement", "2's complement",
+            "Out-of-range flag G (HP-16C flag 5)",
             "How negative values are displayed"}) THEN
     IF mU THEN BNm := 0; END;
     IF m1 THEN BNm := 1; END;
@@ -512,10 +652,45 @@ BEGIN
     IF z == 1 THEN BNz := 1; ELSE BNz := 0; END;
     IF g == 1 THEN BNg := 1; ELSE BNg := 0; END;
     IF cy == 1 THEN BNc := 1; ELSE BNc := 0; END;
+    IF ov == 1 THEN BNo := 1; ELSE BNo := 0; END;
   END;
 END;
 
 // ---------------- stack ----------------
+
+// Snapshot of the state UNDO restores.
+zSN()
+BEGIN
+  RETURN {BNstk, BNc, BNo, BNw, BNm, BNb};
+END;
+
+// 1 if snapshot t equals the current state.
+zSQ(t)
+BEGIN
+  LOCAL j, a, b, k;
+  IF t(2) <> BNc OR t(3) <> BNo OR t(4) <> BNw OR t(5) <> BNm OR t(6) <> BNb THEN RETURN 0; END;
+  a := t(1);
+  IF SIZE(a) <> SIZE(BNstk) THEN RETURN 0; END;
+  FOR j FROM 1 TO SIZE(a) DO
+    b := BNstk(j); k := a(j);
+    IF SIZE(b) <> SIZE(k) THEN RETURN 0; END;
+    IF b(1) <> k(1) OR b(2) <> k(2) THEN RETURN 0; END;
+    IF SIZE(b) == 3 THEN
+      IF b(3) <> k(3) THEN RETURN 0; END;
+    END;
+  END;
+  RETURN 1;
+END;
+
+// UNDO: back to the undo point. zMAIN then keeps the state it replaced as
+// the new undo point, so UNDO again redoes (HP-48 style). The entry line
+// is left alone.
+zUN()
+BEGIN
+  IF SIZE(zU) < 6 THEN zMsg := "Nothing to undo"; RETURN; END;
+  BNstk := zU(1); BNc := zU(2); BNo := zU(3);
+  BNw := zU(4); BNm := zU(5); BNb := zU(6);
+END;
 
 zX(k)
 BEGIN
@@ -599,6 +774,7 @@ BEGIN
   LOCAL n, t, v, k, c, op;
   IF a == 0 THEN RETURN; END;
   IF a < 0 THEN zPI := -a; zPP := 1; RETURN; END;
+  IF a == 3 THEN zUN(); RETURN; END;
   // IEEE encode: the real being typed (pushed), else X (replaced).
   // Text -> word: the text typed on the entry line with ALPHA; with no
   // text typed, X shown as text ("HI" from ▶ASCII) goes back to its number.
@@ -646,7 +822,7 @@ BEGIN
   IF a == 1 THEN zSET(); RETURN; END;
   IF a > 100 THEN BNb := a - 100; RETURN; END;
   n := SIZE(BNstk);
-  k := (a >= 31 AND a <= 43) OR (a >= 45 AND a <= 47) OR a == 52 OR a == 61 OR a == 62;
+  k := (a >= 31 AND a <= 43) OR (a >= 45 AND a <= 47) OR a == 52 OR a == 56 OR a == 57 OR (a >= 61 AND a <= 62) OR (a >= 64 AND a <= 66);
   IF k AND n < 2 THEN zMsg := "Too few arguments"; RETURN; END;
   IF n < 1 THEN zMsg := "Too few arguments"; RETURN; END;
   CASE
@@ -680,9 +856,29 @@ BEGIN
       zPOP();
       zPSH({0, zGB(zX(1), k)});
     END;
+    // SB / CB: Y with bit n (X) set / cleared; no flags (HP-16C).
+    IF a == 56 OR a == 57 THEN
+      k := zCNT();
+      IF k < 0 OR k >= BNw THEN zMsg := "Bit number must be 0-" + STRING(BNw-1,1); RETURN; END;
+      zPOP();
+      BNstk(1) := zSB(zX(1), k, IFTE(a == 56, 1, 0));
+    END;
+    IF a == 53 OR a == 54 THEN
+      k := zCNT();
+      IF k < 0 OR k > BNw THEN zMsg := "n in X must be 0-" + STRING(BNw,1); RETURN; END;
+      IF a == 54 THEN v := zMR(k); ELSE v := zNOT(zMR(BNw-k)); END;
+      BNstk(1) := v;
+    END;
+    IF a == 55 THEN BNstk(1) := {0, zNB(zX(1))}; END;
+    IF a >= 64 AND a <= 66 THEN
+      v := zARI(zX(2), zX(1), a-63);
+      IF SIZE(v) == 0 THEN zMsg := "Divide by 0"; RETURN; END;
+      zP2(v);
+    END;
     IF a == 61 THEN
       v := zADD(zX(2), zX(1));
       IF BNm == 1 AND BNc == 1 THEN v := zADD(v, {0,1}); BNc := 1; END;
+      BNo := zOV(zX(2), zX(1), v, 0);
       zP2(v);
     END;
     IF a == 62 THEN
@@ -693,9 +889,15 @@ BEGIN
         v := zADD(v, {0,1}); c := MAX(c, BNc);
       END;
       BNc := 1 - c;
+      BNo := zOV(zX(2), zX(1), v, 1);
       zP2(v);
     END;
-    IF a == 63 THEN BNstk(1) := zNEG(zX(1)); END;
+    // CHS: G = 1 only for the most negative word in 2's (it negates to itself).
+    IF a == 63 THEN
+      v := zX(1);
+      BNo := BNm == 2 AND zGB(v, BNw-1) == 1 AND zNB(v) == 1;
+      BNstk(1) := zNEG(v);
+    END;
     // Decode tags X in place: same bits, shown as the real value. Any op
     // that rewrites X drops the tag (entries are {h, l} or {h, l, text}).
     IF a == 73 THEN v := zX(1); BNstk(1) := {v(1), v(2), zFD(v, 8, 23)}; END;
@@ -773,8 +975,8 @@ BEGIN
   RETURN rows;
 END;
 
-// Word state in three parts so the carry can be drawn in red:
-// {"|Size: 64|2's", " C" or "", "|T P G|" or "|"}.
+// Word state in four parts so C can be drawn in red and G in green:
+// {"|Size: 64|2's", " C" or "", " G" or "", "|T P Grp|" or "|"}.
 zST()
 BEGIN
   LOCAL ms := {"UNS", "1's", "2's"};
@@ -784,9 +986,10 @@ BEGIN
   f := "";
   IF BNp == 1 THEN f := f + " T"; END;
   IF BNz == 1 THEN f := f + " P"; END;
-  IF BNg == 1 THEN f := f + " G"; END;
+  IF BNg == 1 THEN f := f + " Grp"; END;
   IF DIM(f) > 0 THEN f := "|" + MID(f, 2) + "|"; ELSE f := "|"; END;
-  RETURN {"|Size: " + STRING(BNw,1) + "|" + ms(km), IFTE(BNc == 1, " C", ""), f};
+  RETURN {"|Size: " + STRING(BNw,1) + "|" + ms(km), IFTE(BNc == 1, " C", ""),
+          IFTE(BNo == 1, " G", ""), f};
 END;
 
 zMENU()
@@ -798,7 +1001,6 @@ BEGIN
   FOR k FROM 1 TO 6 DO
     c := it(6*zPP-6+k);
     lb(k) := c(1);
-    IF c(2) > 100 AND c(2) - 100 == BNb THEN lb(k) := "■" + c(1); END;
   END;
   DRAWMENU(lb);
 END;
@@ -831,17 +1033,21 @@ BEGIN
     TEXTOUT_P(zMsg, G0, 315-w, 23, 2, #FF3030h);
     zMsg := "";
   ELSE
-    // Word state, right-aligned; the carry C in red, a status like the
-    // HP-16C's C annunciator, not an error.
+    // Word state, right-aligned; the carry C in red and out-of-range G in
+    // green, statuses like the HP-16C's C / G annunciators, not errors.
     ch := zST();
-    x := 315 - zTW(ch(1) + ch(2) + ch(3), 2);
+    x := 315 - zTW(ch(1) + ch(2) + ch(3) + ch(4), 2);
     TEXTOUT_P(ch(1), G0, x, 23, 2, #FFFFFFh);
     x := x + zTW(ch(1), 2);
     IF DIM(ch(2)) > 0 THEN
       TEXTOUT_P(ch(2), G0, x, 23, 2, #FF3030h);
       x := x + zTW(ch(2), 2);
     END;
-    IF DIM(ch(3)) > 0 THEN TEXTOUT_P(ch(3), G0, x, 23, 2, #FFFFFFh); END;
+    IF DIM(ch(3)) > 0 THEN
+      TEXTOUT_P(ch(3), G0, x, 23, 2, #30E030h);
+      x := x + zTW(ch(3), 2);
+    END;
+    IF DIM(ch(4)) > 0 THEN TEXTOUT_P(ch(4), G0, x, 23, 2, #FFFFFFh); END;
   END;
 
   // Nine 20px rows from y=40; the entry line takes the last one.
@@ -861,13 +1067,25 @@ BEGIN
       IF NOT zRE() THEN xv := zPR(zCmd, BNb); END;
     END;
   END;
-  zNT := 1;
+  // The working base's label is blue with a dot after it ("OCT •"); each
+  // base's rows are recorded in zRY so a tap there switches to it.
+  zNT := 1; zRY := {};
   FOR i FROM 1 TO 5 DO
     IF i == 1 THEN s := zBCD(xv); ELSE s := zS(xv, bl(i)); END;
     ch := zWR(s, 2, 270);
+    y := 40 + 20*(r-1);
+    IF i > 1 THEN
+      zRY(SIZE(zRY)+1) := {y, y + 20*SIZE(ch) - 1, bl(i)};
+    END;
     FOR k FROM 1 TO SIZE(ch) DO
       y := 40 + 20*(r-1);
-      IF k == 1 THEN TEXTOUT_P(lb(i), G0, 4, y+4, 1, #808080h); END;
+      IF k == 1 THEN
+        IF i > 1 AND bl(i) == BNb THEN
+          TEXTOUT_P(lb(i) + " •", G0, 4, y+4, 1, #1050D0h);
+        ELSE
+          TEXTOUT_P(lb(i), G0, 4, y+4, 1, #808080h);
+        END;
+      END;
       w := zTW(ch(k), 2);
       TEXTOUT_P(ch(k), G0, 316-w, y+2, 2, #000000h);
       r := r + 1;
@@ -910,12 +1128,17 @@ zHELP()
 BEGIN
   LOCAL n := CHAR(10);
   MSGBOX("0-9 A-F: digits (current base)" + n +
-         ". EEX: real, for f▶32 / f▶64 (f.Conv)" + n +
+         ". EEX: real, for f▶32 / f▶64 (IEEE)" + n +
          "ALPHA / Shift ALPHA: text, for ASCII▶" + n +
          "Enter: push / dup   Del: backspace / drop" + n +
-         "Shift Del / Shift Esc: clear stack" + n +
+         "Shift Esc: clear stack   Shift Del: UNDO" + n +
          ", : swap X,Y" + n +
          "+ - : add, subtract   +/- : negate" + n +
+         "× ÷ : multiply, divide   Shift ÷ : RMD" + n +
+         "C: carry / borrow, ÷ remainder not 0" + n +
+         "G: result out of range (+ - × ÷ +/-)" + n +
+         "Base: Shift B/O/D/H or tap HEX/DEC/OCT/BIN" + n +
+         "Shift W: word size from X (W.SZE)" + n +
          "Left/Right: menu page   Up/Down: menu group" + n +
          "Esc: clear entry / back   Menu: top menu" + n +
          "Home / Apps: leave the app");
@@ -930,6 +1153,13 @@ BEGIN
   IF k == 36 THEN
     IF sh THEN zAL := IFTE(zAL == 2, 0, 2); ELSE zAL := IFTE(zAL == 1, 0, 1); END;
     RETURN;
+  END;
+  // Shift + letter key B / O / D / H: switch base (keys 15 / 29 / 17 / 22);
+  // Shift W (key 39): word size from X, as W.SZE.
+  IF sh THEN
+    i := POS({15, 29, 17, 22}, k);
+    IF i > 0 THEN zDO(IFTE(i == 1, 102, IFTE(i == 2, 108, IFTE(i == 3, 110, 116)))); RETURN; END;
+    IF k == 39 THEN zDO(4); RETURN; END;
   END;
   IF zAL > 0 AND NOT sh THEN
     i := POS(zAK, k);
@@ -971,7 +1201,7 @@ BEGIN
     END;
     IF k == 19 THEN
       IF sh THEN
-        BNstk := {}; zCmd := "";
+        zUN();
       ELSE
         IF DIM(zCmd) > 0 THEN zCmd := MID(zCmd, 1, DIM(zCmd)-1);
         ELSE zPOP();
@@ -1001,6 +1231,8 @@ BEGIN
     END;
     IF k == 50 THEN zDO(61); END;
     IF k == 45 THEN zDO(62); END;
+    IF k == 40 THEN zDO(64); END;
+    IF k == 35 THEN zDO(IFTE(sh, 66, 65)); END;
     IF k == 7  THEN zPP := IFTE(zPP > 1, zPP-1, np); END;
     IF k == 8  THEN zPP := IFTE(zPP < np, zPP+1, 1); END;
     IF k == 2  THEN zPI := IFTE(zPI > 1, zPI-1, SIZE(zPG)); zPP := 1; END;
@@ -1024,7 +1256,15 @@ zTAP(mx, my)
 BEGIN
   LOCAL it, c;
   LOCAL m := 0;
-  IF my < 220 THEN RETURN; END;
+  // Panel: a tap on a HEX/DEC/OCT/BIN row switches the working base.
+  IF my < 220 THEN
+    FOR m FROM 1 TO SIZE(zRY) DO
+      it := zRY(m);
+      IF my >= it(1) AND my <= it(2) THEN zSh := 0; zDO(100 + it(3)); RETURN; END;
+    END;
+    RETURN;
+  END;
+  m := 0;
   CASE
     IF   0 <= mx AND mx <=  51 THEN m := 1; END;
     IF  53 <= mx AND mx <= 104 THEN m := 2; END;
@@ -1042,7 +1282,7 @@ END;
 
 zMAIN()
 BEGIN
-  LOCAL w, d, p0;
+  LOCAL w, d, p0, u;
   zEX := 0; d := 1;
   DIMGROB_P(G9, 640, 40);
   IF zPI < 1 OR zPI > SIZE(zPG) THEN zPI := 1; END;
@@ -1058,6 +1298,7 @@ BEGIN
     d := 0;
     w := WAIT(-1);
     p0 := zPI;
+    u := zSN();
     IF TYPE(w) == 6 THEN
       IF SIZE(w) >= 3 THEN
         IF B→R(w(1)) == 3 THEN
@@ -1073,7 +1314,10 @@ BEGIN
       END;
     END;
     IF DIM(zCmd) == 0 THEN zTX := 0; END;
-    // f.Conv shows IEEE words in hex: switch on entry, restore on exit.
+    // Any event that changed the stack or the word state sets the undo
+    // point (before the IEEE base switch, so paging is not an undo step).
+    IF NOT zSQ(u) THEN zU := u; END;
+    // IEEE shows its words in hex: switch on entry, restore on exit.
     IF p0 <> 5 AND zPI == 5 THEN zOB := BNb; BNb := 16; END;
     IF p0 == 5 AND zPI <> 5 THEN BNb := zOB; END;
   END;
