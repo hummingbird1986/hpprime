@@ -314,6 +314,10 @@ is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB, stdlib zlib
   word, G = overflow (signed range in 1's/2's), C untouched; ÷ truncates toward 0, C = remainder
   ≠ 0, G = 2's MIN/-1; RMD has Y's sign; X = 0 → "Divide by 0", stack untouched. Checked against Python big
   ints (all modes, widths 8-64). First `FOR … DOWNTO` in the tree (`zDV`).
+- **Flag prefix on stack level 1 (2026-11-28).** While C / G are set, X's first row is drawn as
+  `C G FF` / `C 0xFF` / `G FF` (`zFL`/`zDFL`): state-based, not attached to the value; C before G,
+  one space between them and one before the number (user changed it from two), tags included; C red `#E02020`, G green `#109010`.
+  The strip annunciators stay. Wrap width shrinks by the prefix width.
 - **C / G flags (2026-11-27, HP-16C flags 4 / 5).** `BNc` = carry/borrow (+ −, shifts, ÷
   remainder); `BNo` = out of range: + − via `zOV` (UNS: same as C; 1's/2's: signed overflow),
   × and ÷ in `zARI`, CHS of 2's MIN. RMD, logic, MASK, #B leave both alone. Not verified on device.

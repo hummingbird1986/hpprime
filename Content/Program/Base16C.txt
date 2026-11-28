@@ -1024,10 +1024,34 @@ BEGIN
   DRAWMENU(lb);
 END;
 
+// Flag prefix for stack level 1, from the current state: "C G ", "C ",
+// "G " or "". One space between C and G and before the number.
+zFL()
+BEGIN
+  LOCAL t := "";
+  IF BNc == 1 THEN t := "C"; END;
+  IF BNo == 1 THEN t := t + IFTE(DIM(t) > 0, " G", "G"); END;
+  IF DIM(t) > 0 THEN t := t + " "; END;
+  RETURN t;
+END;
+
+// Draw that prefix from x: C red, G green (darker than the strip's, for
+// the white background).
+zDFL(x, y, f)
+BEGIN
+  LOCAL u := x;
+  IF BNc == 1 THEN
+    TEXTOUT_P("C", G0, u, y, f, #E02020h);
+    u := u + zTW("C ", f);
+  END;
+  IF BNo == 1 THEN TEXTOUT_P("G", G0, u, y, f, #109010h); END;
+END;
+
 zDRAW()
 BEGIN
   LOCAL it, np, ti, s, w, y, r, rt;
   LOCAL k, i, ch, f, nl, lv, xv, x;
+  LOCAL pr, pw;
   LOCAL bl := {0, 16, 10, 8, 2};
   LOCAL lb := {"BCD", "HEX", "DEC", "OCT", "BIN"};
 
@@ -1119,8 +1143,16 @@ BEGIN
   WHILE rt >= r AND lv <= SIZE(BNstk) DO
     s := zS(zX(lv), BNb);
     IF SIZE(BNstk(lv)) == 3 THEN s := BNstk(lv, 3); END;
+    // Level 1 carries the C / G flags in front of its first row.
+    pr := IFTE(lv == 1, zFL(), "");
+    pw := 0;
+    IF DIM(pr) > 0 THEN pw := zTW(pr, 3); END;
     f := 3; ch := {s};
-    IF zTW(s, 3) > 284 THEN f := 2; ch := zWR(s, 2, 284); END;
+    IF zTW(s, 3) + pw > 284 THEN
+      f := 2;
+      IF DIM(pr) > 0 THEN pw := zTW(pr, 2); END;
+      ch := zWR(s, 2, 284 - pw);
+    END;
     nl := SIZE(ch);
     IF rt - nl + 1 < r THEN BREAK; END;
     FOR k FROM 1 TO nl DO
@@ -1128,6 +1160,7 @@ BEGIN
       IF k == 1 THEN TEXTOUT_P(STRING(lv,1) + ":", G0, 4, y, 3, #000000h); END;
       w := zTW(ch(k), f);
       TEXTOUT_P(ch(k), G0, 316-w, y + IFTE(f == 3, 0, 2), f, #000000h);
+      IF k == 1 AND DIM(pr) > 0 THEN zDFL(316-w-pw, y + IFTE(f == 3, 0, 2), f); END;
     END;
     rt := rt - nl; lv := lv + 1;
   END;
