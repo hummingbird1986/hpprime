@@ -311,7 +311,8 @@ is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB, stdlib zlib
 - **C / G flags (2026-11-27, HP-16C flags 4 / 5).** `BNc` = carry/borrow (+ −, shifts, ÷
   remainder); `BNo` = out of range: + − via `zOV` (UNS: same as C; 1's/2's: signed overflow),
   × and ÷ in `zARI`, CHS of 2's MIN. RMD, logic, MASK, #B leave both alone. Not verified on device.
-- **UNDO (2026-11-27).** Shift Del and top menu page 2 `UNDO` (code 3). `zMAIN` snapshots
+- **UNDO (2026-11-27).** **Shift 4** (the U key, 37; moved from Shift Del 2026-11-28, Shift Del now does
+  nothing) and top menu page 2 `UNDO` (code 3). `zMAIN` snapshots
   `{BNstk, BNc, BNo, BNw, BNm, BNb}` (`zSN`) before each event and, if the event changed it (`zSQ`),
   keeps the snapshot in `zU`. `zUN` restores `zU`; the replaced state becomes the new `zU`, so
   UNDO twice = redo. One level only. Entry line untouched. Shift Esc still clears the stack.

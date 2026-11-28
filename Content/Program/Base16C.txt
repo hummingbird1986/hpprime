@@ -1131,7 +1131,7 @@ BEGIN
          ". EEX: real, for f→32 / f→64 (IEEE)" + n +
          "ALPHA / Shift ALPHA: text, for α→X" + n +
          "Enter: push / dup   Del: backspace / drop" + n +
-         "Shift Esc: clear stack   Shift Del: UNDO" + n +
+         "Shift Esc: clear stack   Shift 4 (U): UNDO" + n +
          ", : swap X,Y" + n +
          "+ - : add, subtract   +/- : negate" + n +
          "× ÷ : multiply, divide   Shift ÷ : RMD" + n +
@@ -1160,6 +1160,8 @@ BEGIN
     i := POS({43, 33, 47, 39}, k);
     IF i > 0 THEN zDO(IFTE(i == 1, 102, IFTE(i == 2, 108, IFTE(i == 3, 110, 116)))); RETURN; END;
     IF k == 49 THEN zDO(4); RETURN; END;
+    // Shift 4 (the U key, 37): UNDO.
+    IF k == 37 THEN zUN(); RETURN; END;
   END;
   IF zAL > 0 AND NOT sh THEN
     i := POS(zAK, k);
@@ -1199,13 +1201,10 @@ BEGIN
         zCmd := zCmd + zEE();
       END;
     END;
-    IF k == 19 THEN
-      IF sh THEN
-        zUN();
-      ELSE
-        IF DIM(zCmd) > 0 THEN zCmd := MID(zCmd, 1, DIM(zCmd)-1);
-        ELSE zPOP();
-        END;
+    // Del: backspace / drop. Shift Del does nothing (UNDO moved to Shift 4).
+    IF k == 19 AND NOT sh THEN
+      IF DIM(zCmd) > 0 THEN zCmd := MID(zCmd, 1, DIM(zCmd)-1);
+      ELSE zPOP();
       END;
     END;
     IF k == 29 THEN
