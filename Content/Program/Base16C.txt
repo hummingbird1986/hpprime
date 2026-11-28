@@ -39,6 +39,7 @@ zRY:={};
 zU:={};
 
 // Menu pages. Item = {label, code}. A label ending in ▶ opens a folder (as in CSTMenu).
+// No Back items (removed 2026-11-28): Menu, or Esc with an empty entry line, returns to the top.
 // No base items (removed 2026-11-27): Shift 2/8/0/6 or a panel tap. RMD is on Shift ÷ only.
 // code < 0: go to page -code. 1 Conf, 2 Enter (Enter key only), 3 UNDO, 4 W.SZE (word size from X),
 // 102/108/110/116 base (Shift 2/8/0/6, or tapping a panel row; no menu item), 21-27 shift op (x), 31-37 shift op n times (y, n),
@@ -50,15 +51,14 @@ zU:={};
 zPG:={
  {"", {{"Conf.",1},{"W.SZE",4},{"Shift▶",-2},{"Logic▶",-3},{"Bits▶",-4},{"Conv▶",-5},
        {"UNDO",3},{"",0},{"",0},{"",0},{"",0},{"",0}}},
- {"Shift", {{"SL",21},{"SR",22},{"RL",24},{"RR",25},{"ASR",23},{"Back",-1},
-                 {"SLn",31},{"SRn",32},{"RLn",34},{"RRn",35},{"ASRn",33},{"Back",-1},
-                 {"RLC",26},{"RRC",27},{"RLCn",36},{"RRCn",37},{"LJ",51},{"Back",-1}}},
- {"Logic", {{"AND",41},{"OR",42},{"XOR",43},{"NOT",44},{"",0},{"Back",-1},
-                 {"NAND",45},{"NOR",46},{"XNOR",47},{"",0},{"",0},{"Back",-1}}},
- {"Bits", {{"SB",56},{"CB",57},{"B?",52},{"#B",55},{"",0},{"Back",-1},
-                 {"MASKL",53},{"MASKR",54},{"",0},{"",0},{"",0},{"Back",-1}}},
- {"Conv", {{"f→32",71},{"f→64",72},{"32→f",73},{"64→f",74},{"",0},{"Back",-1},
-                 {"X→G",81},{"G→X",82},{"α→X",84},{"X→α",83},{"",0},{"Back",-1}}}
+ {"Shift", {{"SL",21},{"SR",22},{"RL",24},{"RR",25},{"ASR",23},{"",0},
+                 {"SLn",31},{"SRn",32},{"RLn",34},{"RRn",35},{"ASRn",33},{"",0},
+                 {"RLC",26},{"RRC",27},{"RLCn",36},{"RRCn",37},{"LJ",51},{"",0}}},
+ {"Logic", {{"AND",41},{"OR",42},{"XOR",43},{"NOT",44},{"",0},{"",0},
+                 {"NAND",45},{"NOR",46},{"XNOR",47},{"",0},{"",0},{"",0}}},
+ {"Bits", {{"SB",56},{"CB",57},{"B?",52},{"#B",55},{"MASKL",53},{"MASKR",54}}},
+ {"Conv", {{"f→32",71},{"f→64",72},{"32→f",73},{"64→f",74},{"",0},{"",0},
+                 {"X→G",81},{"G→X",82},{"α→X",84},{"X→α",83},{"",0},{"",0}}}
 };
 
 // ---------------- word engine (copy of BaseN.hpprgm, Bt* -> BN*) ----------------
@@ -1024,27 +1024,33 @@ BEGIN
   DRAWMENU(lb);
 END;
 
-// Flag prefix for stack level 1, from the current state: "C G ", "C ",
-// "G " or "". One space between C and G and before the number.
+// Flag prefix for stack level 1, from the current state: "CG ", "C ",
+// "G " or "". C and G adjacent, one space before the number.
 zFL()
 BEGIN
   LOCAL t := "";
   IF BNc == 1 THEN t := "C"; END;
-  IF BNo == 1 THEN t := t + IFTE(DIM(t) > 0, " G", "G"); END;
+  IF BNo == 1 THEN t := t + "G"; END;
   IF DIM(t) > 0 THEN t := t + " "; END;
   RETURN t;
 END;
 
-// Draw that prefix from x: C red, G green (darker than the strip's, for
-// the white background).
+// Draw that prefix from x: C bright red, G bright green.
 zDFL(x, y, f)
 BEGIN
   LOCAL u := x;
   IF BNc == 1 THEN
-    TEXTOUT_P("C", G0, u, y, f, #E02020h);
-    u := u + zTW("C ", f);
+    TEXTOUT_P("C", G0, u, y, f, #FF1A1Ah);
+    u := u + zTW("C", f);
   END;
-  IF BNo == 1 THEN TEXTOUT_P("G", G0, u, y, f, #109010h); END;
+  IF BNo == 1 THEN TEXTOUT_P("G", G0, u, y, f, #00C000h); END;
+END;
+
+// Stack level label: X: Y: Z: T: for 1-4, then 5: 6: ...
+zLV(n)
+BEGIN
+  IF n <= 4 THEN RETURN MID("XYZT", n, 1) + ":"; END;
+  RETURN STRING(n, 1) + ":";
 END;
 
 zDRAW()
@@ -1157,12 +1163,17 @@ BEGIN
     IF rt - nl + 1 < r THEN BREAK; END;
     FOR k FROM 1 TO nl DO
       y := 40 + 20*(rt-nl+k-1);
-      IF k == 1 THEN TEXTOUT_P(STRING(lv,1) + ":", G0, 4, y, 3, #000000h); END;
+      IF k == 1 THEN TEXTOUT_P(zLV(lv), G0, 4, y, 3, #000000h); END;
       w := zTW(ch(k), f);
       TEXTOUT_P(ch(k), G0, 316-w, y + IFTE(f == 3, 0, 2), f, #000000h);
       IF k == 1 AND DIM(pr) > 0 THEN zDFL(316-w-pw, y + IFTE(f == 3, 0, 2), f); END;
     END;
     rt := rt - nl; lv := lv + 1;
+  END;
+  // X Y Z T stay labelled when empty (black, as filled ones), as far as the rows allow.
+  WHILE rt >= r AND lv <= 4 DO
+    TEXTOUT_P(zLV(lv), G0, 4, 40 + 20*(rt-1), 3, #000000h);
+    rt := rt - 1; lv := lv + 1;
   END;
 
   // Entry line.

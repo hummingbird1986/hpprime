@@ -274,8 +274,8 @@ is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB, stdlib zlib
   top `Conf. W.SZE Shift▶ Logic▶ Bits▶ Conv▶` / `UNDO` (a trailing `▶` marks a folder,
   CSTMenu's convention; conversions use `→`, e.g. `f→32`, `X→G`, so the two never look alike, 2026-11-28). **No base items on the menu — the user does not want them** (removed
   2026-11-27; wrongly re-added and removed again 2026-11-28). Base switching is keys + touch only. Shift: SL SR RL RR ASR /
-  SLn SRn RLn RRn ASRn / RLC RRC RLCn RRCn LJ. Logic: AND OR XOR NOT / NAND NOR XNOR. Bits:
-  SB CB B? #B / MASKL MASKR. Conv (IEEE and Code merged 2026-11-28): f→32 f→64 32→f 64→f / X→G G→X α→X X→α (G = Gray,
+  SLn SRn RLn RRn ASRn / RLC RRC RLCn RRCn LJ. Logic: AND OR XOR NOT / NAND NOR XNOR. Bits
+  (one page): SB CB B? #B MASKL MASKR. **No Back items** (removed 2026-11-28; Menu / Esc return). Conv (IEEE and Code merged 2026-11-28): f→32 f→64 32→f 64→f / X→G G→X α→X X→α (G = Gray,
   α = ASCII text). No automatic base switch on entering Conv (the old IEEE page forced Hex;
   removed 2026-11-28, `zOB` is gone). Instead f→32/f→64 tag their result with its pattern as
   full-width hex (`{h, l, "0x3FC00000"}`, grouped if Grouping is on as `0x 3F C0 00 00`, the same
@@ -314,9 +314,12 @@ is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB, stdlib zlib
   word, G = overflow (signed range in 1's/2's), C untouched; ÷ truncates toward 0, C = remainder
   ≠ 0, G = 2's MIN/-1; RMD has Y's sign; X = 0 → "Divide by 0", stack untouched. Checked against Python big
   ints (all modes, widths 8-64). First `FOR … DOWNTO` in the tree (`zDV`).
+- **Stack labels (2026-11-28):** levels 1-4 are `X: Y: Z: T:` (`zLV`), 5+ stay numeric; empty X-T rows
+  keep a black label (user: not grey) as far as the rows allow.
 - **Flag prefix on stack level 1 (2026-11-28).** While C / G are set, X's first row is drawn as
-  `C G FF` / `C 0xFF` / `G FF` (`zFL`/`zDFL`): state-based, not attached to the value; C before G,
-  one space between them and one before the number (user changed it from two), tags included; C red `#E02020`, G green `#109010`.
+  `CG FF` / `C 0xFF` / `G FF` (`zFL`/`zDFL`): state-based, not attached to the value; C before G,
+  no space between them, one before the number (user's spacing), tags included; C bright red `#FF1A1A`,
+  G bright green `#00C000` (darker shades were too dull).
   The strip annunciators stay. Wrap width shrinks by the prefix width.
 - **C / G flags (2026-11-27, HP-16C flags 4 / 5).** `BNc` = carry/borrow (+ −, shifts, ÷
   remainder); `BNo` = out of range: + − via `zOV` (UNS: same as C; 1's/2's: signed overflow),
