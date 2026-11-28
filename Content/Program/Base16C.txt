@@ -243,6 +243,18 @@ BEGIN
   RETURN n;
 END;
 
+// n hex digits of x (0 <= x < 2^32), leading zeros kept.
+zHX(x, n)
+BEGIN
+  LOCAL s, j, y;
+  s := ""; y := x;
+  FOR j FROM 1 TO n DO
+    s := MID("0123456789ABCDEF", (y MOD 16)+1, 1) + s;
+    y := IP(y/16);
+  END;
+  RETURN s;
+END;
+
 zS(v, b)
 BEGIN
   LOCAL dg, sm, s, h;
@@ -769,7 +781,7 @@ END;
 
 zDO(a)
 BEGIN
-  LOCAL n, t, v, k, c, op;
+  LOCAL n, t, v, k, c, op, s;
   IF a == 0 THEN RETURN; END;
   IF a < 0 THEN zPI := -a; zPP := 1; RETURN; END;
   IF a == 3 THEN zUN(); RETURN; END;
@@ -806,7 +818,15 @@ BEGIN
     END;
     // Widen the word if needed; never narrow, so the stack is not cut.
     IF BNw < k THEN BNw := k; END;
-    IF a == 71 THEN BNstk(1) := zF(v, 8, 23); ELSE BNstk(1) := zF(v, 11, 52); END;
+    // The result carries a display tag, its bit pattern as full-width hex
+    // ("0x3FC00000"), whatever the current base; the base itself is not changed.
+    IF a == 71 THEN
+      v := zF(v, 8, 23); s := zHX(v(2), 8);
+    ELSE
+      v := zF(v, 11, 52); s := zHX(v(1), 8) + zHX(v(2), 8);
+    END;
+    IF BNg == 1 THEN s := zGP(s, 16); END;
+    BNstk(1) := {v(1), v(2), "0x" + s};
     RETURN;
   END;
   t := (zCmd <> "");

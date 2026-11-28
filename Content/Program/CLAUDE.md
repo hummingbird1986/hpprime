@@ -277,7 +277,9 @@ is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB, stdlib zlib
   SLn SRn RLn RRn ASRn / RLC RRC RLCn RRCn LJ. Logic: AND OR XOR NOT / NAND NOR XNOR. Bits:
   SB CB B? #B / MASKL MASKR. Conv (IEEE and Code merged 2026-11-28): f→32 f→64 32→f 64→f / X→G G→X α→X X→α (G = Gray,
   α = ASCII text). No automatic base switch on entering Conv (the old IEEE page forced Hex;
-  removed 2026-11-28, `zOB` is gone). RMD is on Shift ÷ only (not
+  removed 2026-11-28, `zOB` is gone). Instead f→32/f→64 tag their result with its pattern as
+  full-width hex (`{h, l, "0x3FC00000"}`, grouped if Grouping is on; `zHX`), the mirror of
+  32→f/64→f's `"3.14 f32"` tag, so neither side changes the base (user's choice 2026-11-28). RMD is on Shift ÷ only (not
   HP-16C's position, where it is f 9; the user confirmed Shift ÷ on 2026-11-28). Base also
   switches with **Shift + digit 2 / 8 / 0 / 6** → base 2 / 8 / 10 / 16 (key codes 43 / 33 / 47 / 39;
   digits only type without Shift) and by **tapping a HEX/DEC/OCT/BIN panel row** (codes
