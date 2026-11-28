@@ -21,7 +21,7 @@ zCmd:="";
 // Base in use before entering IEEE (page 5), restored on leaving it.
 zOB:=16;
 // Letter entry: zAL 0 off, 1 ALPHA (upper), 2 alpha (lower); zTX 1 while the
-// entry line holds text (letters typed), which only ASCII→ accepts.
+// entry line holds text (letters typed), which only α→X accepts.
 zAL:=0;
 zTX:=0;
 // Key codes carrying the orange letters A-Z on the keypad.
@@ -60,7 +60,7 @@ zPG:={
  {"Bits", {{"SB",56},{"CB",57},{"B?",52},{"#B",55},{"",0},{"Back",-1},
                  {"MASKL",53},{"MASKR",54},{"",0},{"",0},{"",0},{"Back",-1}}},
  {"IEEE 754", {{"f→32",71},{"f→64",72},{"",0},{"32→f",73},{"64→f",74},{"Back",-1}}},
- {"Code", {{"→Gray",81},{"Gray→",82},{"→ASCII",83},{"ASCII→",84},{"",0},{"Back",-1}}}
+ {"Code", {{"X→G",81},{"G→X",82},{"α→X",84},{"X→α",83},{"",0},{"Back",-1}}}
 };
 
 // ---------------- word engine (copy of BaseN.hpprgm, Bt* -> BN*) ----------------
@@ -744,7 +744,7 @@ END;
 // Push the entry as a word; returns 0 (and leaves it) if it is a real.
 zENT()
 BEGIN
-  IF zTX == 1 THEN zMsg := "Text: press ASCII→"; RETURN 0; END;
+  IF zTX == 1 THEN zMsg := "Text: press α→X"; RETURN 0; END;
   IF zRE() THEN zMsg := "Real: press f→32 or f→64"; RETURN 0; END;
   zPSH(zPR(zCmd, BNb));
   zCmd := "";
@@ -777,7 +777,7 @@ BEGIN
   IF a == 3 THEN zUN(); RETURN; END;
   // IEEE encode: the real being typed (pushed), else X (replaced).
   // Text -> word: the text typed on the entry line with ALPHA; with no
-  // text typed, X shown as text ("HI" from →ASCII) goes back to its number.
+  // text typed, X shown as text ("HI" from X→α) goes back to its number.
   IF a == 84 THEN
     IF zTX == 0 OR DIM(zCmd) == 0 THEN
       IF DIM(zCmd) == 0 AND SIZE(BNstk) > 0 THEN BNstk(1) := zX(1); RETURN; END;
@@ -1129,7 +1129,7 @@ BEGIN
   LOCAL n := CHAR(10);
   MSGBOX("0-9 A-F: digits (current base)" + n +
          ". EEX: real, for f→32 / f→64 (IEEE)" + n +
-         "ALPHA / Shift ALPHA: text, for ASCII→" + n +
+         "ALPHA / Shift ALPHA: text, for α→X" + n +
          "Enter: push / dup   Del: backspace / drop" + n +
          "Shift Esc: clear stack   Shift Del: UNDO" + n +
          ", : swap X,Y" + n +

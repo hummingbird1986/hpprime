@@ -272,10 +272,10 @@ is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB, stdlib zlib
   G in green, no popup, as the HP-16C's annunciators; `Grp` = grouping). Panel BCD/HEX/DEC/OCT/BIN of X (no Tag prefix there), then the stack,
   menu at 220. Menu pages and numeric action codes are in `zPG`. Menu rearranged 2026-11-28:
   top `Conf. W.SZE Shift▶ Logic▶ Bits▶ IEEE▶` / `Code▶ UNDO` (a trailing `▶` marks a folder,
-  CSTMenu's convention; conversions use `→`, e.g. `f→32`, `→Gray`, so the two never look alike, 2026-11-28). **No base items on the menu — the user does not want them** (removed
+  CSTMenu's convention; conversions use `→`, e.g. `f→32`, `X→G`, so the two never look alike, 2026-11-28). **No base items on the menu — the user does not want them** (removed
   2026-11-27; wrongly re-added and removed again 2026-11-28). Base switching is keys + touch only. Shift: SL SR RL RR ASR /
   SLn SRn RLn RRn ASRn / RLC RRC RLCn RRCn LJ. Logic: AND OR XOR NOT / NAND NOR XNOR. Bits:
-  SB CB B? #B / MASKL MASKR. Code: →Gray Gray→ →ASCII ASCII→. RMD is on Shift ÷ only (not
+  SB CB B? #B / MASKL MASKR. Code: X→G G→X α→X X→α (G = Gray, α = ASCII text; user-chosen 2026-11-28). RMD is on Shift ÷ only (not
   HP-16C's position, where it is f 9; the user confirmed Shift ÷ on 2026-11-28). Base also
   switches with **Shift + digit 2 / 8 / 0 / 6** → base 2 / 8 / 10 / 16 (key codes 43 / 33 / 47 / 39;
   digits only type without Shift) and by **tapping a HEX/DEC/OCT/BIN panel row** (codes
@@ -288,7 +288,7 @@ is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB, stdlib zlib
   Tag/Padding/Grouping/Carry, sign mode, Overflow (G) and Negative. IEEE (page 5) switches to hex
   on entry and restores the previous base on exit (`zOB`, checked in `zMAIN` by page change).
 - **Entry line:** digits of the current base; `.`/EEX make a real (only f→32/f→64 take it);
-  ALPHA / Shift ALPHA type letters (`zAK` key codes) as text, which only ASCII→ takes.
+  ALPHA / Shift ALPHA type letters (`zAK` key codes) as text, which only α→X takes.
 - Entry follows Base48: `START()` → `STARTVIEW(-1,1)` and then the loop. `Num()` re-enters it.
   Home leaves the app to Home view, and Apps leaves it to the App Library.
 - PPL runtime pitfalls found on the device: `INSTRING` on an empty string raises a runtime error
@@ -321,7 +321,7 @@ is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB, stdlib zlib
   `SLn SRn RLn RRn` (same slots as their 1-bit forms on page 1), 3 is `RLC RRC RLCn RRCn LJ`; Logic page 2 is `NOR XNOR B? #B`, 3 is `MASKL MASKR SB CB`
   (bit ops grouped by function, not by HP-16C key position). MASK takes n (0-`BNw`)
   from X and replaces it (`zMR`); #B replaces X with its 1-bit count (`zNB`).
-- Stack entries are `{h, l}`, or `{h, l, text}` after 32→f/64→f/→ASCII (shown as text; ops drop the tag).
+- Stack entries are `{h, l}`, or `{h, l, text}` after 32→f/64→f/X→α (shown as text; ops drop the tag).
 - **Append a `\0` (UTF-16 NUL) to the plain payload** (`(src + '\0').encode('utf-16-le')`, length
   field includes it). With it, the Kit's compiled copy ended exactly at the source (verified
   2026-11-26); without it the Kit appended stale text / `0xFFFF` filler. Still verify after compiling.
