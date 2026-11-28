@@ -825,7 +825,8 @@ BEGIN
     ELSE
       v := zF(v, 11, 52); s := zHX(v(1), 8) + zHX(v(2), 8);
     END;
-    IF BNg == 1 THEN s := zGP(s, 16); END;
+    // Grouped as zPX does it: "0x " + pairs (0x 3F C0 00 00).
+    IF BNg == 1 THEN s := " " + zGP(s, 16); END;
     BNstk(1) := {v(1), v(2), "0x" + s};
     RETURN;
   END;
