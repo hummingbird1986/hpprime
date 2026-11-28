@@ -41,9 +41,9 @@ zRY:={};
 zU:={};
 
 // Menu pages. Item = {label, code}. A label ending in ▶ opens a folder (as in CSTMenu).
-// No base items (removed 2026-11-27): Shift B/O/D/H or a panel tap. RMD is on Shift ÷ only.
+// No base items (removed 2026-11-27): Shift 2/8/0/6 or a panel tap. RMD is on Shift ÷ only.
 // code < 0: go to page -code. 1 Conf, 2 Enter (Enter key only), 3 UNDO, 4 W.SZE (word size from X),
-// 102/108/110/116 base (Shift B/O/D/H, or tapping a panel row; no menu item), 21-27 shift op (x), 31-37 shift op n times (y, n),
+// 102/108/110/116 base (Shift 2/8/0/6, or tapping a panel row; no menu item), 21-27 shift op (x), 31-37 shift op n times (y, n),
 // 61/62 + -, 63 negate, 64/65/66 × ÷ RMD,
 // 41-43 AND/OR/XOR, 44 NOT, 45-47 NAND/NOR/XNOR, 51 LJ, 52 B?,
 // 53/54 MASKL/MASKR (n in X), 55 #B (count of 1 bits), 56/57 SB/CB (set/clear bit n of Y),
@@ -1137,8 +1137,8 @@ BEGIN
          "× ÷ : multiply, divide   Shift ÷ : RMD" + n +
          "C: carry / borrow, ÷ remainder not 0" + n +
          "G: result out of range (+ - × ÷ +/-)" + n +
-         "Base: Shift B/O/D/H or tap HEX/DEC/OCT/BIN" + n +
-         "Shift W: word size from X (W.SZE)" + n +
+         "Base: Shift 2/8/0/6 or tap HEX/DEC/OCT/BIN" + n +
+         "Shift _ (left of +): word size (W.SZE)" + n +
          "Left/Right: menu page   Up/Down: menu group" + n +
          "Esc: clear entry / back   Menu: top menu" + n +
          "Home / Apps: leave the app");
@@ -1154,12 +1154,12 @@ BEGIN
     IF sh THEN zAL := IFTE(zAL == 2, 0, 2); ELSE zAL := IFTE(zAL == 1, 0, 1); END;
     RETURN;
   END;
-  // Shift + letter key B / O / D / H: switch base (keys 15 / 29 / 17 / 22);
-  // Shift W (key 39): word size from X, as W.SZE.
+  // Shift + digit 2 / 8 / 0 / 6: switch to base 2 / 8 / 10 / 16 (keys 43 / 33 / 47 / 39);
+  // Shift + the key left of + (49, space): word size from X, as W.SZE.
   IF sh THEN
-    i := POS({15, 29, 17, 22}, k);
+    i := POS({43, 33, 47, 39}, k);
     IF i > 0 THEN zDO(IFTE(i == 1, 102, IFTE(i == 2, 108, IFTE(i == 3, 110, 116)))); RETURN; END;
-    IF k == 39 THEN zDO(4); RETURN; END;
+    IF k == 49 THEN zDO(4); RETURN; END;
   END;
   IF zAL > 0 AND NOT sh THEN
     i := POS(zAK, k);

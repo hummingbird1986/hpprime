@@ -277,10 +277,10 @@ is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB, stdlib zlib
   SLn SRn RLn RRn ASRn / RLC RRC RLCn RRCn LJ. Logic: AND OR XOR NOT / NAND NOR XNOR. Bits:
   SB CB B? #B / MASKL MASKR. Code: ▶Gray Gray▶ ▶ASCII ASCII▶. RMD is on Shift ÷ only (not
   HP-16C's position, where it is f 9; the user confirmed Shift ÷ on 2026-11-28). Base also
-  switches with **Shift + letter key B / O / D / H** (key codes 15 / 29 / 17 / 22, the `zAK`
-  letters; Shift + `,` is therefore OCT, plain `,` still swaps) and by **tapping a HEX/DEC/
-  OCT/BIN panel row** (codes 102/108/110/116 via `zTAP`). **Shift W** (key 39, also digit 6)
-  runs W.SZE (`zDO(4)`, 2026-11-28). `zDRAW` records
+  switches with **Shift + digit 2 / 8 / 0 / 6** → base 2 / 8 / 10 / 16 (key codes 43 / 33 / 47 / 39;
+  digits only type without Shift) and by **tapping a HEX/DEC/OCT/BIN panel row** (codes
+  102/108/110/116 via `zTAP`). **Shift + the key left of +** (49, space `_`) runs W.SZE
+  (`zDO(4)`). Both set 2026-11-28, replacing a short-lived Shift B/O/D/H + Shift W scheme. `zDRAW` records
   each base's rows in `zRY` as `{y top, y bottom, base}` every frame, so wrapped rows (64-bit BIN)
   still hit; the working base's label is blue with a dot (`OCT •`; the user
   rejected a highlight band). BCD is not tappable.
