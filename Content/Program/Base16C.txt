@@ -1140,6 +1140,7 @@ BEGIN
          "Base: Shift 2/8/0/6 or tap HEX/DEC/OCT/BIN" + n +
          "Shift _ (left of +): word size (W.SZE)" + n +
          "Left/Right: menu page   Up/Down: menu group" + n +
+         "Shift Left / Shift Right: SL / SR" + n +
          "Esc: clear entry / back   Menu: top menu" + n +
          "Home / Apps: leave the app");
 END;
@@ -1162,6 +1163,9 @@ BEGIN
     IF k == 49 THEN zDO(4); RETURN; END;
     // Shift 4 (the U key, 37): UNDO.
     IF k == 37 THEN zUN(); RETURN; END;
+    // Shift Left / Shift Right (round pad, 7 / 8): SL / SR, as the Shift menu keys.
+    IF k == 7 THEN zDO(21); RETURN; END;
+    IF k == 8 THEN zDO(22); RETURN; END;
   END;
   IF zAL > 0 AND NOT sh THEN
     i := POS(zAK, k);

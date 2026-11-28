@@ -280,7 +280,9 @@ is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB, stdlib zlib
   switches with **Shift + digit 2 / 8 / 0 / 6** → base 2 / 8 / 10 / 16 (key codes 43 / 33 / 47 / 39;
   digits only type without Shift) and by **tapping a HEX/DEC/OCT/BIN panel row** (codes
   102/108/110/116 via `zTAP`). **Shift + the key left of +** (49, space `_`) runs W.SZE
-  (`zDO(4)`). Both set 2026-11-28, replacing a short-lived Shift B/O/D/H + Shift W scheme. `zDRAW` records
+  (`zDO(4)`). Both set 2026-11-28, replacing a short-lived Shift B/O/D/H + Shift W scheme.
+  **Shift ← / Shift →** (round pad, 7 / 8) run SL / SR (`zDO(21/22)`; unshifted they still page
+  the menu; 2026-11-28). `zDRAW` records
   each base's rows in `zRY` as `{y top, y bottom, base}` every frame, so wrapped rows (64-bit BIN)
   still hit; the working base's label is blue with a dot (`OCT •`; the user
   rejected a highlight band). BCD is not tappable.
