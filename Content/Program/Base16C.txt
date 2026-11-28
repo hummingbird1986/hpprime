@@ -18,8 +18,6 @@ EXPORT BNo:=0;
 EXPORT BNstk:={};
 
 zCmd:="";
-// Base in use before entering IEEE (page 5), restored on leaving it.
-zOB:=16;
 // Letter entry: zAL 0 off, 1 ALPHA (upper), 2 alpha (lower); zTX 1 while the
 // entry line holds text (letters typed), which only α→X accepts.
 zAL:=0;
@@ -50,8 +48,8 @@ zU:={};
 // 71/72 IEEE-754 single/double encode, 73/74 decode X, 81/82 binary<->Gray,
 // 83 show X as ASCII text, 84 text -> word.
 zPG:={
- {"", {{"Conf.",1},{"W.SZE",4},{"Shift▶",-2},{"Logic▶",-3},{"Bits▶",-4},{"IEEE▶",-5},
-       {"Code▶",-6},{"UNDO",3},{"",0},{"",0},{"",0},{"",0}}},
+ {"", {{"Conf.",1},{"W.SZE",4},{"Shift▶",-2},{"Logic▶",-3},{"Bits▶",-4},{"Conv▶",-5},
+       {"UNDO",3},{"",0},{"",0},{"",0},{"",0},{"",0}}},
  {"Shift", {{"SL",21},{"SR",22},{"RL",24},{"RR",25},{"ASR",23},{"Back",-1},
                  {"SLn",31},{"SRn",32},{"RLn",34},{"RRn",35},{"ASRn",33},{"Back",-1},
                  {"RLC",26},{"RRC",27},{"RLCn",36},{"RRCn",37},{"LJ",51},{"Back",-1}}},
@@ -59,8 +57,8 @@ zPG:={
                  {"NAND",45},{"NOR",46},{"XNOR",47},{"",0},{"",0},{"Back",-1}}},
  {"Bits", {{"SB",56},{"CB",57},{"B?",52},{"#B",55},{"",0},{"Back",-1},
                  {"MASKL",53},{"MASKR",54},{"",0},{"",0},{"",0},{"Back",-1}}},
- {"IEEE 754", {{"f→32",71},{"f→64",72},{"",0},{"32→f",73},{"64→f",74},{"Back",-1}}},
- {"Code", {{"X→G",81},{"G→X",82},{"α→X",84},{"X→α",83},{"",0},{"Back",-1}}}
+ {"Conv", {{"f→32",71},{"f→64",72},{"32→f",73},{"64→f",74},{"",0},{"Back",-1},
+                 {"X→G",81},{"G→X",82},{"α→X",84},{"X→α",83},{"",0},{"Back",-1}}}
 };
 
 // ---------------- word engine (copy of BaseN.hpprgm, Bt* -> BN*) ----------------
@@ -1128,7 +1126,7 @@ zHELP()
 BEGIN
   LOCAL n := CHAR(10);
   MSGBOX("0-9 A-F: digits (current base)" + n +
-         ". EEX: real, for f→32 / f→64 (IEEE)" + n +
+         ". EEX: real, for f→32 / f→64 (Conv)" + n +
          "ALPHA / Shift ALPHA: text, for α→X" + n +
          "Enter: push / dup   Del: backspace / drop" + n +
          "Shift Esc: clear stack   Shift 4 (U): UNDO" + n +
@@ -1285,7 +1283,7 @@ END;
 
 zMAIN()
 BEGIN
-  LOCAL w, d, p0, u;
+  LOCAL w, d, u;
   zEX := 0; d := 1;
   DIMGROB_P(G9, 640, 40);
   IF zPI < 1 OR zPI > SIZE(zPG) THEN zPI := 1; END;
@@ -1300,7 +1298,6 @@ BEGIN
     END;
     d := 0;
     w := WAIT(-1);
-    p0 := zPI;
     u := zSN();
     IF TYPE(w) == 6 THEN
       IF SIZE(w) >= 3 THEN
@@ -1318,11 +1315,8 @@ BEGIN
     END;
     IF DIM(zCmd) == 0 THEN zTX := 0; END;
     // Any event that changed the stack or the word state sets the undo
-    // point (before the IEEE base switch, so paging is not an undo step).
+    // point.
     IF NOT zSQ(u) THEN zU := u; END;
-    // IEEE shows its words in hex: switch on entry, restore on exit.
-    IF p0 <> 5 AND zPI == 5 THEN zOB := BNb; BNb := 16; END;
-    IF p0 == 5 AND zPI <> 5 THEN BNb := zOB; END;
   END;
   IF zEX == 2 THEN STARTVIEW(-4, 1); ELSE STARTVIEW(-1, 1); END;
 END;

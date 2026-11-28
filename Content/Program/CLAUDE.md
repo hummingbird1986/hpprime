@@ -271,11 +271,13 @@ is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB, stdlib zlib
   `Base 16 · <page>` left, `|Size: 64|2's C G|T P Grp|` right (carry C in red, out-of-range
   G in green, no popup, as the HP-16C's annunciators; `Grp` = grouping). Panel BCD/HEX/DEC/OCT/BIN of X (no Tag prefix there), then the stack,
   menu at 220. Menu pages and numeric action codes are in `zPG`. Menu rearranged 2026-11-28:
-  top `Conf. W.SZE Shift▶ Logic▶ Bits▶ IEEE▶` / `Code▶ UNDO` (a trailing `▶` marks a folder,
+  top `Conf. W.SZE Shift▶ Logic▶ Bits▶ Conv▶` / `UNDO` (a trailing `▶` marks a folder,
   CSTMenu's convention; conversions use `→`, e.g. `f→32`, `X→G`, so the two never look alike, 2026-11-28). **No base items on the menu — the user does not want them** (removed
   2026-11-27; wrongly re-added and removed again 2026-11-28). Base switching is keys + touch only. Shift: SL SR RL RR ASR /
   SLn SRn RLn RRn ASRn / RLC RRC RLCn RRCn LJ. Logic: AND OR XOR NOT / NAND NOR XNOR. Bits:
-  SB CB B? #B / MASKL MASKR. Code: X→G G→X α→X X→α (G = Gray, α = ASCII text; user-chosen 2026-11-28). RMD is on Shift ÷ only (not
+  SB CB B? #B / MASKL MASKR. Conv (IEEE and Code merged 2026-11-28): f→32 f→64 32→f 64→f / X→G G→X α→X X→α (G = Gray,
+  α = ASCII text). No automatic base switch on entering Conv (the old IEEE page forced Hex;
+  removed 2026-11-28, `zOB` is gone). RMD is on Shift ÷ only (not
   HP-16C's position, where it is f 9; the user confirmed Shift ÷ on 2026-11-28). Base also
   switches with **Shift + digit 2 / 8 / 0 / 6** → base 2 / 8 / 10 / 16 (key codes 43 / 33 / 47 / 39;
   digits only type without Shift) and by **tapping a HEX/DEC/OCT/BIN panel row** (codes
@@ -287,8 +289,7 @@ is a byte copy of `Base48.hpapp`; the icon is generated (38×38 RGB, stdlib zlib
   still hit; the working base's label is blue with a dot (`OCT •`; the user
   rejected a highlight band). BCD is not tappable.
   `W.SZE` (code 4) pops X as the word size, HP-16C WSIZE style. Conf. ("Base16C Setup") holds only
-  Tag/Padding/Grouping/Carry, sign mode, Overflow (G) and Negative. IEEE (page 5) switches to hex
-  on entry and restores the previous base on exit (`zOB`, checked in `zMAIN` by page change).
+  Tag/Padding/Grouping/Carry, sign mode, Overflow (G) and Negative.
 - **Entry line:** digits of the current base; `.`/EEX make a real (only f→32/f→64 take it);
   ALPHA / Shift ALPHA type letters (`zAK` key codes) as text, which only α→X takes.
 - Entry follows Base48: `START()` → `STARTVIEW(-1,1)` and then the loop. `Num()` re-enters it.
